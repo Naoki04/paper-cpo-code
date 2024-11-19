@@ -279,11 +279,20 @@ class A2CBase(BaseAlgorithm):
 
         self.value_bootstrap = self.config.get('value_bootstrap')
         self.use_smooth_clamp = self.config.get('use_smooth_clamp', False)
-
+        self.sapg2 = self.config.get('sapg2', False)
+        self.awac_lambda = self.config.get('awac_lambda', False)
+        self.awac_clip = self.config.get('awac_clip', False)
+        
+        
+        # アクターロス関数の選択
         if self.use_smooth_clamp:
             self.actor_loss_func = common_losses.smoothed_actor_loss
         else:
             self.actor_loss_func = common_losses.actor_loss
+        if self.sapg2:
+            self.actor_loss_func = common_losses.actor_loss_with_awac
+            print("====Actor loss with AWAC for SAPG2 is selectrd for loss func====")
+            
 
         if self.normalize_advantage and self.normalize_rms_advantage:
             momentum = self.config.get('adv_rms_momentum', 0.5)
@@ -394,6 +403,7 @@ class A2CBase(BaseAlgorithm):
 
     def write_stats(self, total_time, epoch_num, step_time, play_time, update_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul, frame, scaled_time, scaled_play_time, curr_frames):
         # do we need scaled time?
+        print("------writing-------")
         self.diagnostics.send_info(self.writer)
         self.writer.add_scalar('performance/step_inference_rl_update_fps', curr_frames / scaled_time, frame)
         self.writer.add_scalar('performance/step_inference_fps', curr_frames / scaled_play_time, frame)
@@ -953,27 +963,37 @@ class A2CBase(BaseAlgorithm):
         return batch_dict, extras
     
     def augment_batch_for_mixed_expl(self, batch_dict, extras, repeat_idxs=None):
+        # batch_dict.keys(): dict_keys(['actions', 'neglogpacs', 'values', 'mus', 'sigmas', 'obses', 'dones', 'returns', 'played_frames', 'rnn_states', 'step_time'])
+        # extras.keys(): dict_keys(['rewards', 'obs', 'last_obs', 'states', 'dones', 'last_dones', 'rnn_states', 'last_rnn_states', 'mb_intr_rewards', 'mb_extr_rewards'])
+        
         new_batch_dict = {}
         num_blocks = self.num_actors // self.intr_coef_block_size
+        
+        # デフォではNone
         if repeat_idxs is None:
             num_repeat = min(num_blocks, int(self.config['off_policy_ratio']) + 1)
             repeat_idxs = [0] + [int(x) for x in np.random.choice(range(1, self.num_actors // self.intr_coef_block_size), num_repeat-1, replace=False)]
             if self.multi_gpu:
                 dist.broadcast_object_list(repeat_idxs, 0)
+                
         for key, val in batch_dict.items():
             if key in ['played_frames', 'step_time']:
                 new_batch_dict[key] = val
             elif key == 'obses':
+                # obsの末尾にself.intr_reward_coef_embdを追加する操作。オリジナル分以外は0にすることで、offline化する。
                 intr_coef_embd = torch.cat([torch.roll(self.intr_reward_coef_embd, self.intr_coef_block_size*i, dims=0) for i in repeat_idxs], dim=0)
-                obses = torch.cat([val]*len(repeat_idxs), dim=0)
+                obses = torch.cat([val]*len(repeat_idxs), dim=0) # obsesも2回分繰り返す
                 obses[:, -self.intr_reward_coef_embd.shape[-1]:] = intr_coef_embd.repeat_interleave(self.horizon_length, dim=0)
                 mask = torch.zeros(len(obses), dtype=torch.bool, device=obses.device)
-                mask[len(val):] = True
+                mask[len(val):] = True # maskはオリジナル分だけFalse. (9600)
                 if self.use_others_experience == 'lf': # leader follower type update
+                    # オリジナル1個分(全エージェント)と、他のエージェント1個分を取得。4800+800=5600
                     obses = filter_leader(obses, len(val), repeat_idxs, num_blocks)
                     mask = filter_leader(mask, len(val), repeat_idxs, num_blocks)
                 new_batch_dict[key] = obses
-                new_batch_dict['off_policy_mask'] = mask
+                new_batch_dict['off_policy_mask'] = mask # 5600中800(オリジナルじゃない分)がTrue
+                    
+
             elif key in ['values', 'returns']:
                 pass  # handled below
             elif key == 'rnn_states':
@@ -991,6 +1011,7 @@ class A2CBase(BaseAlgorithm):
         new_returns_list = [batch_dict['returns']]
         new_values_list = [batch_dict['values']]
         
+        
         for r_k in repeat_idxs[1:]:
             mb_rewards = extras['rewards']
             mb_obs = extras['obs']
@@ -999,6 +1020,7 @@ class A2CBase(BaseAlgorithm):
             mb_states = extras['states']
             mb_rnn_states = extras['rnn_states']
             
+            # extraのobsについてもここで埋め込みを書き換える
             mb_obs[:,:, -self.intr_reward_coef_embd.shape[-1]:] = torch.roll(self.intr_reward_coef_embd, self.intr_coef_block_size*r_k, dims=0)
             last_obs_and_states['obs'][:,-self.intr_reward_coef_embd.shape[-1]:] = torch.roll(self.intr_reward_coef_embd, self.intr_coef_block_size*r_k, dims=0)
             
@@ -1039,6 +1061,190 @@ class A2CBase(BaseAlgorithm):
         extras['last_obs']['obs'][:,-self.intr_reward_coef_embd.shape[-1]:] = self.intr_reward_coef_embd
 
         return new_batch_dict
+    
+    
+    def augment_batch_for_sapg2(self, batch_dict, extras, repeat_idxs=None):
+        # batch_dict.keys(): dict_keys(['actions', 'neglogpacs', 'values', 'mus', 'sigmas', 'obses', 'dones', 'returns', 'played_frames', 'rnn_states', 'step_time'])
+        # extras.keys(): dict_keys(['rewards', 'obs', 'last_obs', 'states', 'dones', 'last_dones', 'rnn_states', 'last_rnn_states', 'mb_intr_rewards', 'mb_extr_rewards'])
+        # 50, 40, 30, 20, 10, 0の順で入ってくる
+        
+        new_batch_dict = {}
+        num_blocks = self.num_actors // self.intr_coef_block_size
+        
+        # デフォではNone
+        if repeat_idxs is None:
+            num_repeat = min(num_blocks, int(self.config['off_policy_ratio']) + 1)
+            # デフォだと3回繰り返す。1回目分は各クリティックのオンライン学習用, 2回目分はフォロワーのAWAC学習とリーダーのオンライン学習用、3回目分はリーダーのオンライン学習用、
+            repeat_idxs = [0, 0] + [int(x) for x in np.random.choice(range(1, self.num_actors // self.intr_coef_block_size), num_repeat-1, replace=False)]
+            if self.multi_gpu:
+                dist.broadcast_object_list(repeat_idxs, 0)
+                
+                
+        for key, val in batch_dict.items():
+            if key in ['played_frames', 'step_time']:
+                new_batch_dict[key] = val
+            elif key == 'obses':
+                # obsの末尾にself.intr_reward_coef_embdを追加する操作。オリジナル分以外は0にすることで、offline化する。
+                intr_coef_embd = torch.cat([torch.roll(self.intr_reward_coef_embd, self.intr_coef_block_size*i, dims=0) for i in repeat_idxs], dim=0)
+                # obsesも2回分繰り返す
+                obses = torch.cat([val]*len(repeat_idxs), dim=0) 
+                # 後半分のobsの埋め込みをずらして書き換える(後でfilterでリーダー分だけ残す)
+                obses[:, -self.intr_reward_coef_embd.shape[-1]:] = intr_coef_embd.repeat_interleave(self.horizon_length, dim=0) 
+                
+                ### SAPG2 ###
+                # フォロワーのオリジナルデータをリーダーデータで書き換える。埋め込みはそのまま 
+                obses[len(val):2*len(val)-self.intr_coef_block_size*self.horizon_length, :-1] = obses[2*len(val)-self.intr_coef_block_size*self.horizon_length:2*len(val), :-1].repeat(int(len(val)/self.intr_coef_block_size/self.horizon_length-1),1)
+                # AWACの式で更新するべきデータ(フォロワーのオフライン学習データ)をマスクで管理
+                awac_mask = torch.zeros(len(obses), dtype=torch.bool, device=obses.device)
+                awac_mask[len(val):2*len(val)-self.intr_coef_block_size*self.horizon_length] = True
+                # Critic学習用のオリジナルデータにマスクをかける
+                critic_mask = torch.zeros(len(obses), dtype=torch.bool, device=obses.device)
+                critic_mask[:len(val)] = True
+                
+                
+                mask = torch.zeros(len(obses), dtype=torch.bool, device=obses.device)
+                mask[2*len(val):] = True # maskはオリジナル分だけFalse. (9600)
+                if self.use_others_experience == 'lf': # leader follower type update
+                    # オリジナル1個分(全エージェント)と、他のエージェント1個分を取得。4800+800=5600
+                    obses = filter_leader(obses, len(val), repeat_idxs, num_blocks)
+                    mask = filter_leader(mask, len(val), repeat_idxs, num_blocks)
+                    awac_mask = filter_leader(awac_mask, len(val), repeat_idxs, num_blocks)
+                    critic_mask = filter_leader(critic_mask, len(val), repeat_idxs, num_blocks)
+                    
+                new_batch_dict[key] = obses
+                new_batch_dict['off_policy_mask'] = mask # 10400中800(オリジナルじゃない分)がTrue
+                new_batch_dict['awac_mask'] = awac_mask # 10400中4000(オリジナルをリーダーデータで書き換えた分)がTrue
+                new_batch_dict['critic_mask'] = critic_mask # 10400中4800(オリジナルデータ分だけ)True
+                    
+
+            elif key in ['values', 'returns']:
+                pass  # handled below
+            elif key == 'rnn_states':
+                if val is not None:
+                    # valはリストで、[tensorA[1,300,768], tensorB[1,300,768]]のようになっている。
+                    # この*lenとcatにより、new_batch = [tensorA[1,300,768]を2つ並べた[1,600,768], tensorB[1,300,768]を2つ並べた[1,600,768]]になる。
+                    new_batch_dict[key] = [torch.cat([val[i]]*len(repeat_idxs), dim=1) for i in range(len(val))]
+                    
+                    ### SAPG2 ###
+                    # よって、tensorA, Bそれぞれについて0~250, 300~550の部分をリーダーデータで書き換える。
+                    # 前半のフォロワーデータをリーダーデータで書き換える
+                    #print(val[0].shape[1]-self.intr_coef_block_size) # 250
+                    #print(val[0].shape[1]) # 300
+                    #print(2*val[0].shape[1]-self.intr_coef_block_size) # 550
+                    # tensorAの部分
+                    new_batch_dict[key][0][:,val[0].shape[1]:2*val[0].shape[1]-self.intr_coef_block_size] = new_batch_dict[key][0][:,2*val[0].shape[1]-self.intr_coef_block_size:2*val[0].shape[1]].repeat(1,int(val[0].shape[1]/self.intr_coef_block_size-1),1)
+                    new_batch_dict[key][0][:,2*val[0].shape[1]:3*val[0].shape[1]-self.intr_coef_block_size] = new_batch_dict[key][0][:,3*val[0].shape[1]-self.intr_coef_block_size:].repeat(1,int(val[0].shape[1]/self.intr_coef_block_size-1),1)
+                    # tensorBの部分
+                    new_batch_dict[key][1][:,val[0].shape[1]:2*val[0].shape[1]-self.intr_coef_block_size] = new_batch_dict[key][1][:,2*val[1].shape[1]-self.intr_coef_block_size:2*val[1].shape[1]].repeat(1,int(val[1].shape[1]/self.intr_coef_block_size-1),1)
+                    new_batch_dict[key][1][:,2*val[0].shape[1]:3*val[0].shape[1]-self.intr_coef_block_size] = new_batch_dict[key][1][:,3*val[1].shape[1]-self.intr_coef_block_size:].repeat(1,int(val[1].shape[1]/self.intr_coef_block_size-1),1)
+                    
+                    
+                    if self.use_others_experience == 'lf':
+                        new_batch_dict[key] = [filter_leader(new_batch_dict[key][i], val[i].shape[1], repeat_idxs, num_blocks) for i in range(len(val))]
+                else:
+                    new_batch_dict[key] = None
+            else:
+                new_batch_dict[key] = torch.cat([val]*len(repeat_idxs), dim=0)
+                ### SAPG2 ###
+                # 前半のフォロワーデータをリーダーデータで書き換える
+                if len(val.shape) > 1: # 各行が次元を持っている場合
+                    new_batch_dict[key][len(val):2*len(val)-self.intr_coef_block_size*self.horizon_length] = new_batch_dict[key][2*len(val)-self.intr_coef_block_size*self.horizon_length:2*len(val)].repeat(int(len(val)/self.intr_coef_block_size/self.horizon_length-1), 1)
+                else: # 各行がスカラーの場合は[800]をrepeat(5,1)すると[5,800]になるので、[4000]にするためにview(-1).squeeze(0)する
+                    new_batch_dict[key][len(val):2*len(val)-self.intr_coef_block_size*self.horizon_length] = new_batch_dict[key][2*len(val)-self.intr_coef_block_size*self.horizon_length:2*len(val)].repeat(int(len(val)/self.intr_coef_block_size/self.horizon_length-1), 1).view(-1).squeeze(0)    
+                
+                if self.use_others_experience == 'lf': # leader follower type update
+                    new_batch_dict[key] = filter_leader(new_batch_dict[key], len(val), repeat_idxs, num_blocks)
+
+        
+        ##### ここ実装する！！！！#####
+        # new_batch_dictには1.リーダーデータ(フォロワー埋め込み)4000、2.リーダーデータリーダー埋め込み(800)、3.フォロワーデータリーダー埋め込み(800)が入っており、1と3はreturnとvalueの再計算が必要。
+        # # フォロワーデータに関しては、リーダーデータに書き換えて、価値とリターンを再計算する。リーダーのオンラインデータはそのまま。
+        # クリティック学習用のオリジナルデータは更新しないので、そのまま入れておく。
+        new_returns_list = [batch_dict['returns']]
+        new_values_list = [batch_dict['values']]
+        
+        
+        
+        
+        # 繰り返し分はもとのコードで処理する。
+        for r_k in repeat_idxs[1:]: # クリティック用のデータ(1個目)はスキップ、2個目のリーダーオンラインデータ以外, 3個目のデータに適用
+            mb_rewards = extras['rewards'] # torch.Size([16, 300, 1])
+            mb_obs = extras['obs'] # torch.Size([16, 300, 100])
+            last_obs_and_states = extras['last_obs'] # dict_keys(['obs', 'states']), ['obs']=torch.Size([300, 100]), ['states']=torch.Size([300, 99])
+            last_rnn_states = extras['last_rnn_states'] # 2, [0]=torch.Size([1, 300, 768])
+            mb_states = extras['states'] # Nonetype
+            mb_rnn_states = extras['rnn_states'] # 2, torch.Size([16, 1, 300, 768]) torch.Size([16, 1, 300, 768])
+            
+            if r_k == 0: # 初めのデータについてはフォロワーデータをリーダーデータでおきかえて処理する。
+                mb_rewards[:, :mb_rewards.shape[1]-self.intr_coef_block_size,:] = mb_rewards[:,mb_rewards.shape[1]-self.intr_coef_block_size:].repeat(1, int(mb_rewards.shape[1]/self.intr_coef_block_size-1), 1)
+                mb_obs[:, :mb_obs.shape[1]-self.intr_coef_block_size,:-1] = mb_obs[:, mb_obs.shape[1]-self.intr_coef_block_size:, :-1].repeat(1, int(mb_obs.shape[1]/self.intr_coef_block_size-1), 1)
+                last_obs_and_states["obs"][:last_obs_and_states["obs"].shape[0]-self.intr_coef_block_size,:-1] = last_obs_and_states["obs"][last_obs_and_states["obs"].shape[0]-self.intr_coef_block_size:, :-1].repeat(int(last_obs_and_states["obs"].shape[0]/self.intr_coef_block_size-1), 1)
+                last_obs_and_states["states"][:last_obs_and_states["states"].shape[0]-self.intr_coef_block_size] = last_obs_and_states["states"][last_obs_and_states["states"].shape[0]-self.intr_coef_block_size:].repeat(int(last_obs_and_states["states"].shape[0]/self.intr_coef_block_size-1), 1)
+                last_rnn_states[0][:,:last_rnn_states[0].shape[1]-self.intr_coef_block_size] = last_rnn_states[0][:,last_rnn_states[0].shape[1]-self.intr_coef_block_size:].repeat(1, int(last_rnn_states[0].shape[1]/self.intr_coef_block_size-1), 1)
+                last_rnn_states[1][:,:last_rnn_states[1].shape[1]-self.intr_coef_block_size] = last_rnn_states[1][:,last_rnn_states[1].shape[1]-self.intr_coef_block_size:].repeat(1, int(last_rnn_states[1].shape[1]/self.intr_coef_block_size-1), 1)
+                # mb_statesがnoneでない場合はassertion
+                assert mb_states is None, f"mb_states is None, but {type(mb_states), mb_states}"
+                mb_rnn_states[0][:,:,:mb_rnn_states[0].shape[2]-self.intr_coef_block_size] = mb_rnn_states[0][:,:,mb_rnn_states[0].shape[2]-self.intr_coef_block_size:].repeat(1,1, int(mb_rnn_states[0].shape[2]/self.intr_coef_block_size-1), 1)
+                mb_rnn_states[1][:,:,:mb_rnn_states[1].shape[2]-self.intr_coef_block_size] = mb_rnn_states[1][:,:,mb_rnn_states[1].shape[2]-self.intr_coef_block_size:].repeat(1,1, int(mb_rnn_states[1].shape[2]/self.intr_coef_block_size-1), 1)
+                    
+                
+                
+            else: # リーダーのオフライン学習データについてはこれまで同様の処理をする。
+                # extraのobsについてもここで埋め込みを書き換える
+                mb_obs[:,:, -self.intr_reward_coef_embd.shape[-1]:] = torch.roll(self.intr_reward_coef_embd, self.intr_coef_block_size*r_k, dims=0)
+                last_obs_and_states['obs'][:,-self.intr_reward_coef_embd.shape[-1]:] = torch.roll(self.intr_reward_coef_embd, self.intr_coef_block_size*r_k, dims=0)
+            
+            flattened_rnn_states = [rnn_s.transpose(0, 1).reshape(rnn_s.transpose(0, 1).shape[0], -1, *rnn_s.shape[3:]) for rnn_s in mb_rnn_states] if mb_rnn_states is not None else None
+
+            flattened_mb_obs = mb_obs.reshape(-1, *mb_obs.shape[2:])
+            flattened_mb_states = mb_states.reshape(-1, *mb_states.shape[2:]) if mb_states is not None else None
+            
+            mb_values = []
+            for i in range((flattened_mb_obs.shape[0] + 8191) // 8192):
+                mb_values.append(self.get_values({
+                    'obs': flattened_mb_obs[i*8192:(i+1)*8192], 
+                    'states': flattened_mb_states[i*8192:(i+1)*8192] if mb_states is not None else None
+                    }, rnn_states=[s[:, i*8192:(i+1)*8192] for s in flattened_rnn_states] if flattened_rnn_states is not None else None))
+            mb_values = torch.cat(mb_values, dim=0)
+            last_values = self.get_values(last_obs_and_states, last_rnn_states)
+            
+            mb_values = mb_values.reshape(*mb_obs.shape[:2], *mb_values.shape[1:])
+            mb_values = torch.cat([mb_values, last_values.unsqueeze(0)], dim=0)
+            
+            mb_fdones = extras['dones'] # torch.Size([16, 300])
+            fdones = extras['last_dones'] # torch.Size([300])
+            if r_k == 0:
+                mb_fdones[:, :mb_fdones.shape[1]-self.intr_coef_block_size] = mb_fdones[:, mb_fdones.shape[1]-self.intr_coef_block_size:].repeat(1, int(mb_fdones.shape[1]/self.intr_coef_block_size-1))
+                fdones[:fdones.shape[0]-self.intr_coef_block_size] = fdones[fdones.shape[0]-self.intr_coef_block_size:].repeat(int(fdones.shape[0]/self.intr_coef_block_size-1), 1).view(-1).squeeze(0)
+                
+                
+                
+
+            mb_fdones = torch.cat([mb_fdones, fdones.unsqueeze(0)], dim=0)
+            mb_returns = mb_rewards + (torch.roll(self.intr_reward_coef, self.intr_coef_block_size*r_k, dims=0).unsqueeze(0).unsqueeze(2) * extras['mb_intr_rewards'] if extras['mb_intr_rewards'] is not None else 0)  + self.gamma * mb_values[1:] * (1 - mb_fdones[1:]).unsqueeze(-1)
+                
+            
+            new_returns_list.append(swap_and_flatten01(mb_returns))
+            new_values_list.append(swap_and_flatten01(mb_values[:-1]))
+            
+            
+            # リーダーのオンライン学習については、オリジナルデータに差し替える。
+            if r_k == 0:
+                new_returns_list[0][len(batch_dict['returns'])-self.intr_coef_block_size*self.horizon_length:] = batch_dict['returns'][len(batch_dict['returns'])-self.intr_coef_block_size*self.horizon_length:]
+                new_values_list[0][len(batch_dict['values'])-self.intr_coef_block_size*self.horizon_length:] = batch_dict['values'][len(batch_dict['values'])-self.intr_coef_block_size*self.horizon_length:]
+
+        new_batch_dict['returns'] = torch.cat(new_returns_list, dim=0)
+        new_batch_dict['values'] = torch.cat(new_values_list, dim=0)
+        if self.use_others_experience == 'lf':
+            new_batch_dict['returns'] = filter_leader(new_batch_dict['returns'], len(batch_dict['returns']), repeat_idxs, num_blocks)
+            new_batch_dict['values'] = filter_leader(new_batch_dict['values'], len(batch_dict['values']), repeat_idxs, num_blocks)
+        
+        # reset obs and last obs in extras
+        extras['obs'][:,:, -self.intr_reward_coef_embd.shape[-1]:] = self.intr_reward_coef_embd
+        extras['last_obs']['obs'][:,-self.intr_reward_coef_embd.shape[-1]:] = self.intr_reward_coef_embd
+        
+        
+        return new_batch_dict
 
 
 class DiscreteA2CBase(A2CBase):
@@ -1073,7 +1279,6 @@ class DiscreteA2CBase(A2CBase):
 
         with torch.no_grad():
             batch_dict = self.play_steps()
-
         self.set_train()
 
         play_time_end = time.time()
@@ -1094,6 +1299,7 @@ class DiscreteA2CBase(A2CBase):
         for mini_ep in range(0, self.mini_epochs_num):
             ep_kls = []
             for i in range(len(self.dataset)):
+                # ロスの計算(アクター・クリティック)と学習(ログ用に取得)、dataset(1ミニバッチ分のデータ)がinput_dictに対応
                 a_loss, c_loss, entropy, kl, last_lr, lr_mul = self.train_actor_critic(self.dataset[i])
                 a_losses.append(a_loss)
                 c_losses.append(c_loss)
@@ -1119,7 +1325,7 @@ class DiscreteA2CBase(A2CBase):
 
         return batch_dict['step_time'], play_time, update_time, total_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul
 
-    def prepare_dataset(self, batch_dict):
+    def prepare_dataset(self, batch_dict): # 集めたデータをdatasetに格納
         rnn_masks = batch_dict.get('rnn_masks', None)
         returns = batch_dict['returns']
         values = batch_dict['values']
@@ -1203,6 +1409,7 @@ class DiscreteA2CBase(A2CBase):
 
         while True:
             epoch_num = self.update_epoch()
+            # 環境のstep, データセットの更新, モデルの学習など
             step_time, play_time, update_time, sum_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
 
             # cleaning memory to optimize space
@@ -1247,7 +1454,8 @@ class DiscreteA2CBase(A2CBase):
                     self.writer.add_scalar('episode_lengths/step', mean_lengths, frame)
                     self.writer.add_scalar('episode_lengths/iter', mean_lengths, frame)
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, frame)
-
+                    
+                    
                     if self.has_self_play_config:
                         self.self_play_manager.update(self)
 
@@ -1304,7 +1512,7 @@ class DiscreteA2CBase(A2CBase):
             if should_exit:
                 return self.last_mean_rewards, epoch_num
 
-
+# trainはこちらで記述されている。
 class ContinuousA2CBase(A2CBase):
 
     def __init__(self, base_name, params):
@@ -1344,15 +1552,24 @@ class ContinuousA2CBase(A2CBase):
         self.set_eval()
         play_time_start = time.time()
         with torch.no_grad():
-            orig_batch_dict, ps_extras = self.play_steps()
+            orig_batch_dict, ps_extras = self.play_steps() # 環境でデータを収集
+            
             
             if self.expl_type.startswith('mixed_expl') and self.use_others_experience != 'none':
-                batch_dict = self.augment_batch_for_mixed_expl(orig_batch_dict, ps_extras)
+                if self.sapg2: # SAPG2用のデータ拡張
+                    batch_dict = self.augment_batch_for_sapg2(orig_batch_dict, ps_extras) # SAPG2ではリーダーデータのフォロワー埋め込み・リーダーデータのリーダー埋め込み・フォロワーデータのリーダー埋め込みに拡張する
+                else: # オリジナルのデータ拡張
+                    batch_dict = self.augment_batch_for_mixed_expl(orig_batch_dict, ps_extras)
             else:
                 batch_dict = orig_batch_dict
             if self.expl_type.startswith('mixed_expl'):
+                # データセットをシャッフル
                 batch_dict = shuffle_batch(batch_dict, self.seq_length)
-
+            
+                
+        # batch_dict.keys()=dict_keys(['actions', 'neglogpacs', 'mus', 'sigmas', 'obses', 'off_policy_mask', 'dones', 'played_frames', 'rnn_states', 'step_time', 'returns', 'values'])
+        # originalのactionの次元は[4800, 23], 4800=horizon 16 x envs 300
+        
         play_time_end = time.time()
         update_time_start = time.time()
         rnn_masks = batch_dict.get('rnn_masks', None)
@@ -1387,6 +1604,8 @@ class ContinuousA2CBase(A2CBase):
         for mini_ep in range(0, self.mini_epochs_num):
             ep_kls = []
             for i in range(len(self.dataset)):
+                # self.dataset[i]は1ミニバッチ分のデータがPPODataset.__getitem__から取得される。
+                #dict_keys(['old_values', 'old_logp_actions', 'advantages', 'returns', 'actions', 'obs', 'dones', 'rnn_masks', 'mu', 'sigma', 'off_policy_mask', 'rnn_states'])
                 a_loss, c_loss, entropy, kl, last_lr, lr_mul, cmu, csigma, b_loss, extras = self.train_actor_critic(self.dataset[i])
                 extra_infos['on_policy_contrib'].append(extras['on_policy_contrib'])
                 extra_infos['on_policy_grads'].append(extras['on_policy_grads'])
@@ -1486,6 +1705,8 @@ class ContinuousA2CBase(A2CBase):
         dataset_dict['mu'] = mus
         dataset_dict['sigma'] = sigmas
         dataset_dict['off_policy_mask'] = batch_dict.get('off_policy_mask', None)
+        dataset_dict['awac_mask'] = batch_dict.get('awac_mask', None)
+        dataset_dict['critic_mask'] = batch_dict.get('critic_mask', None)
 
         self.dataset.update_values_dict(dataset_dict)
 

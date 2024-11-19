@@ -55,15 +55,24 @@ def filter_leader(val, orig_len, repeat_idxs, num_blocks):
     Filters data corresponding to leader i.e. evaluation policy
     Used with mixed_expl
     """
+    """
+    repeat_indexは[0, 0, ?]
+    obsの時は(envs300, horizon16),
+        origi_len = 4800
+        val: [4800*2, 100]
+        new_val: [4800*2+800, 100]
+        
+    """
     if len(val) > 1:
-        bsize = orig_len // num_blocks
+        bsize = orig_len // num_blocks # 4800/6 = 800
         filtered_val = []
-        for i, idx in enumerate(repeat_idxs):
+        for i, idx in enumerate(repeat_idxs):#(i,idx)=(0,1,2),(0,0,?))
             if idx == 0:
-                filtered_val.append(val[i*orig_len:(i+1)*orig_len])
+                filtered_val.append(val[i*orig_len:(i+1)*orig_len]) # [0:4800]を取り出す(オリジナル全て)
             else:
-                filtered_val.append(val[i*orig_len + (idx-1)*bsize:i*orig_len + idx*bsize])
+                filtered_val.append(val[i*orig_len + (idx-1)*bsize:i*orig_len + idx*bsize]) # [?x4800: ?x4800+800]を取り出す
         new_val = torch.cat(filtered_val, dim=0)
+        
     else: # axis = 1
         bsize = orig_len // num_blocks
         filtered_val = []
@@ -73,4 +82,5 @@ def filter_leader(val, orig_len, repeat_idxs, num_blocks):
             else:
                 filtered_val.append(val[:, i*orig_len + (idx-1)*bsize:i*orig_len + idx*bsize])
         new_val = torch.cat(filtered_val, dim=1)
+        
     return new_val

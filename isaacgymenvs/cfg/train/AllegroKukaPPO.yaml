@@ -47,6 +47,11 @@ params:
     reward_shaper:
       scale_value: 0.01
 
+    # SAPG2を有効にする
+    sapg2: True
+    awac_lambda : 1.0 # AWACではmujocoベンチに対して1.0, 複雑なロボットタスクに対して0.3を設定していた
+    awac_clip: 10.0
+
     num_actors: ${....task.env.numEnvs}   
     gamma: 0.99
     tau: 0.95
