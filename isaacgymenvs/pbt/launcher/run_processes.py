@@ -129,6 +129,7 @@ def run(run_description, args):
 
             processes.append(process)
 
+
             if process.gpu_id is not None:
                 processes_per_gpu[process.gpu_id].append(process.proc_cmd)
 
@@ -137,7 +138,7 @@ def run(run_description, args):
             time.sleep(args.pause_between)
 
             next_experiment = next(experiments, None)
-
+        
         remaining_processes = []
         for process in processes:
             if process.poll() is None:

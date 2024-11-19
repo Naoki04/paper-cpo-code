@@ -59,7 +59,6 @@ class PPODataset(Dataset):
         
         rnn_states = self.values_dict['rnn_states']
         input_dict['rnn_states'] = [s[:, gstart:gend, :].contiguous() for s in rnn_states]
-
         return input_dict
 
     def _get_item(self, idx):

@@ -48,8 +48,8 @@ def launcher_argparser(args) -> argparse.ArgumentParser:
 def main(launcher_cfg):
 
     run_description = get_experiment_run_description(launcher_cfg)
-
     if launcher_cfg.backend == "processes":
+        # isaacgymenvs.pbt.launcher.run_processes.runを実行する。
         run(run_description, launcher_cfg)
     elif launcher_cfg.backend == "slurm":
         run_slurm(run_description, launcher_cfg)
@@ -60,5 +60,6 @@ def main(launcher_cfg):
 
 
 if __name__ == "__main__":
+    # argsを取得
     launcher_cfg = launcher_argparser(sys.argv[1:]).parse_args(sys.argv[1:])
     sys.exit(main(launcher_cfg))

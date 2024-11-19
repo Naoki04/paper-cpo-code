@@ -188,6 +188,7 @@ class ModelA2CContinuous(BaseModel):
     def __init__(self, network):
         BaseModel.__init__(self, 'a2c')
         self.network_builder = network
+        print("ModelA2CContinuous")
 
     class Network(BaseModelNetwork):
         def __init__(self, a2c_network, **kwargs):
@@ -241,11 +242,11 @@ class ModelA2CContinuous(BaseModel):
                 }
                 return  result          
 
-
 class ModelA2CContinuousLogStd(BaseModel):
     def __init__(self, network):
         BaseModel.__init__(self, 'a2c')
         self.network_builder = network
+        print("ModelA2CContinuousLogStd")
 
     class Network(BaseModelNetwork):
         def __init__(self, a2c_network, **kwargs):
@@ -303,6 +304,7 @@ class ModelMultiA2CContinuousLogStd(BaseModel):
     def __init__(self, network):
         BaseModel.__init__(self, 'a2c')
         self.network_builder = network
+        print("ModelMultiA2CContinuousLogStd")
 
     class Network(BaseModelNetwork):
         def __init__(self, a2c_networks, **kwargs):
@@ -435,6 +437,7 @@ class ModelMultiA2CContinuousLogStd(BaseModel):
         assert not 'coef_id_idx' in config or len(obs_shape) == 1
         return self.Network(nn.ModuleList([self.network_builder.build(self.model_class, **config) for _ in network_ids]), obs_shape=obs_shape,
             normalize_value=normalize_value, normalize_input=normalize_input, value_size=value_size, extra_info_start_idx=extra_info_start_idx, network_ids=network_ids)
+
 
 
 class ModelCentralValue(BaseModel):

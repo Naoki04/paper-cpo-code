@@ -16,9 +16,13 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
     def __init__(self, base_name, params):
         a2c_common.ContinuousA2CBase.__init__(self, base_name, params)
         
+        # アクターモデルの構築
+        ## self.intr_reward_coef_embd は内発的報酬の係数のリスト(n_envs,1)であり、同じblockでは同じ値を持つ。(これはcommonの方で生成される)
         if self.intr_reward_coef_embd is not None and not (self.expl_type.startswith('mixed_expl') and 'disjoint' in self.expl_type):
+            # 内的報酬がONかつ、(探索タイプがmixed_expl & disjointでない)場合、入力を内的報酬の係数で条件づける。
             input_shape = (self.obs_shape[0] + self.intr_reward_coef_embd.shape[1],)
         else:
+            # それ以外では、入力は観測値のみ。
             input_shape = self.obs_shape
         build_config = {
             'actions_num' : self.actions_num,
@@ -30,8 +34,9 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'type' : 'simple' if 'learn_param' not in self.expl_type else 'extra_param',
         }
         
-        if self.expl_type.startswith('mixed_expl'):
-            build_config['coef_ids'] = self.intr_reward_coef_embd[::self.intr_coef_block_size,0]
+        if self.expl_type.startswith('mixed_expl'): 
+            # self.intr_coef_block_sizeは各ブロックの環境数
+            build_config['coef_ids'] = self.intr_reward_coef_embd[::self.intr_coef_block_size,0] # 各ブロックの内的報酬の係数のリスト
             build_config['coef_id_idx'] = self.obs_shape[0]
         
         self.model = self.network.build(build_config)
@@ -42,6 +47,8 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         self.bound_loss_type = self.config.get('bound_loss_type', 'bound') # 'regularisation' or 'bound'
         self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr), eps=1e-08, weight_decay=self.weight_decay)
 
+        
+        # 共通価値ネットワークモデルの構築
         if self.has_central_value:
             cv_config = {
                 'state_shape' : self.state_shape, 
@@ -62,8 +69,12 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             }
             self.central_value_net = central_value.CentralValueTrain(**cv_config).to(self.ppo_device)
 
-        self.use_experimental_cv = self.config.get('use_experimental_cv', True)
+        self.use_experimental_cv = self.config.get('use_experimental_cv', True) # 共通価値ネットワークを使用するかどうかのフラグ
+        
+        # ロールアウトバッファの構築
         self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, self.is_discrete, self.is_rnn, self.ppo_device, self.seq_length)
+        # 300環境, 6エージェントの場合: batch_size=4800, minibatch_size=1200, is_discrete=False, is_rnn=True, ppo_device=cuda:0, seq_length=16(seq_lengthはRNN関連のパラメータ)
+        
         if self.normalize_value:
             self.value_mean_std = self.central_value_net.model.value_mean_std if self.has_central_value else self.model.value_mean_std
 
@@ -87,9 +98,10 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
     def get_masked_action_values(self, obs, action_masks):
         assert False
 
+    # ロスを計算する関数
     def calc_gradients(self, input_dict):
-        value_preds_batch = input_dict['old_values']
-        old_action_log_probs_batch = input_dict['old_logp_actions']
+        value_preds_batch = input_dict['old_values'] # データ収集時の価値関数の予測値
+        old_action_log_probs_batch = input_dict['old_logp_actions'] # データ収集時の方策の対数確率
         advantage = input_dict['advantages']
         old_mu_batch = input_dict['mu']
         old_sigma_batch = input_dict['sigma']
@@ -97,6 +109,9 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         actions_batch = input_dict['actions']
         obs_batch = input_dict['obs']
         obs_batch = self._preproc_obs(obs_batch)
+        off_policy_mask = input_dict.get('off_policy_mask', None)
+        awac_mask = input_dict.get('awac_mask', None)
+        critic_mask = input_dict.get('critic_mask', None)
 
         lr_mul = 1.0
         curr_e_clip = self.e_clip
@@ -124,17 +139,32 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             mu = res_dict['mus']
             sigma = res_dict['sigmas']
 
-            a_loss = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
-
-            if self.has_value_loss:
-                c_loss = common_losses.critic_loss(self.model,value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
+            # アクターのロスを計算する部分(普通のPPOロス)
+            
+            if self.sapg2:
+                a_loss = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip, off_policy_mask, awac_mask, self.awac_lambda, self.awac_clip, critic_mask)
             else:
+                a_loss = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip, off_policy_mask)
+            
+            if self.has_value_loss:
+                # クリッピング付きのクリティックロス
+                if self.sapg2: # critic_maskを使用する場合(厳密にオンラインデータのみで学習する)
+                    c_loss = common_losses.critic_loss_sapg2(self.model,value_preds_batch, values, curr_e_clip, return_batch, self.clip_value, critic_mask)
+                else:
+                    c_loss = common_losses.critic_loss(self.model,value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
+            else:
+                # なし
                 c_loss = torch.zeros((len(values), 1), device=self.ppo_device)
+            
+            # アクターの出力範囲を制限するためのboundロス
             if self.bound_loss_type == 'regularisation':
+                # muの二乗和をロスとして追加
                 b_loss = self.reg_loss(mu)
             elif self.bound_loss_type == 'bound':
+                # muの上下限を超えた分の二乗和をロスを追加
                 b_loss = self.bound_loss(mu)
             else:
+                # なし
                 b_loss = torch.zeros(len(mu), device=self.ppo_device)
             
             if self.expl_type.startswith('mixed_expl') and self.config.get('expl_reward_type') == 'entropy':
@@ -214,6 +244,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             kl_dist, self.last_lr, lr_mul, \
             mu.detach(), sigma.detach(), b_loss, extras)
 
+    # ロスの計算
     def train_actor_critic(self, input_dict):
         self.calc_gradients(input_dict)
         return self.train_result
