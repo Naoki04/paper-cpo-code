@@ -46,7 +46,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         self.last_lr = float(self.last_lr)
         self.bound_loss_type = self.config.get('bound_loss_type', 'bound') # 'regularisation' or 'bound'
         self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr), eps=1e-08, weight_decay=self.weight_decay)
-
         
         # 共通価値ネットワークモデルの構築
         if self.has_central_value:
@@ -135,14 +134,15 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             res_dict = self.model(batch_dict)
             action_log_probs = res_dict['prev_neglogp']
             values = res_dict['values']
-            entropy = res_dict['entropy']
-            mu = res_dict['mus']
+            entropy = res_dict['entropy'] # [1200]
+            mu = res_dict['mus'] # [1200,23]
             sigma = res_dict['sigmas']
+            
 
             # アクターのロスを計算する部分(普通のPPOロス)
             
             if self.sapg2:
-                a_loss = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip, off_policy_mask, awac_mask, self.awac_lambda, self.awac_clip, critic_mask)
+                a_loss = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip, off_policy_mask, awac_mask, self.awac_lambda, self.awac_max, self.awac_alpha, critic_mask)
             else:
                 a_loss = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip, off_policy_mask)
             
@@ -167,6 +167,15 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 # なし
                 b_loss = torch.zeros(len(mu), device=self.ppo_device)
             
+            # オンラインデータでのみ学習するようにマスクを適用した後、正規化する
+            if self.sapg2:
+                b_loss = b_loss * critic_mask
+                b_loss = b_loss / (critic_mask.count_nonzero().item() / critic_mask.shape[0])
+                
+            # エントロピーについてもマスクを適用してから、正規化する
+            entropy = entropy * critic_mask
+            entropy = entropy / (critic_mask.count_nonzero().item() / critic_mask.shape[0])
+            
             if self.expl_type.startswith('mixed_expl') and self.config.get('expl_reward_type') == 'entropy':
                 ec_candidates = self.intr_reward_coef[::self.intr_coef_block_size]
                 ec_identifiers = self.intr_reward_coef_embd[::self.intr_coef_block_size, 0].reshape(-1,1)
@@ -188,6 +197,16 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             a_loss, c_loss, entropy_loss, b_loss = losses[0], losses[1], losses[2], losses[3]
 
             loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy_loss + b_loss * self.bounds_loss_coef
+            
+            print("=========")
+            print("a_loss: ", a_loss)
+            print("c_loss: ", c_loss* self.critic_coef*0.5)
+            print("entropy_loss: ", entropy_loss*self.entropy_coef)
+            print("b_loss: ", b_loss* self.bounds_loss_coef)
+            print("critic_coef: ", self.critic_coef)
+            print("entropy_coef: ", entropy_coef)
+            print("bounds_loss_coef: ", self.bounds_loss_coef)
+            
 
             if self.multi_gpu:
                 self.optimizer.zero_grad()
@@ -240,6 +259,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             bl_ids = self.intr_reward_coef_embd[::self.intr_coef_block_size, 0].reshape(-1,1)
             bl_idxs = torch.argmax((obs_batch[:,-self.intr_reward_coef_embd.shape[1]] == bl_ids).float(), dim=0)
             extras["entropies"] = [torch.nan_to_num(entropy[bl_idxs == i].detach().mean()).item() for i in range(self.num_actors // self.intr_coef_block_size)]
+        # ログの記録
         self.train_result = (a_loss, c_loss, torch_ext.apply_masks([entropy.unsqueeze(1)], rnn_masks)[0][0], \
             kl_dist, self.last_lr, lr_mul, \
             mu.detach(), sigma.detach(), b_loss, extras)

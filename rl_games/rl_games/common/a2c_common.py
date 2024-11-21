@@ -281,7 +281,8 @@ class A2CBase(BaseAlgorithm):
         self.use_smooth_clamp = self.config.get('use_smooth_clamp', False)
         self.sapg2 = self.config.get('sapg2', False)
         self.awac_lambda = self.config.get('awac_lambda', False)
-        self.awac_clip = self.config.get('awac_clip', False)
+        self.awac_max = self.config.get('awac_max', False)
+        self.awac_alpha = self.config.get('awac_alpha', False)
         
         
         # アクターロス関数の選択
@@ -1243,6 +1244,15 @@ class A2CBase(BaseAlgorithm):
         extras['obs'][:,:, -self.intr_reward_coef_embd.shape[-1]:] = self.intr_reward_coef_embd
         extras['last_obs']['obs'][:,-self.intr_reward_coef_embd.shape[-1]:] = self.intr_reward_coef_embd
         
+        """
+        # obsの最後の値を10飛ばしで出力
+        print("=======")
+        obses = new_batch_dict['obses'].cpu().detach().numpy()
+        print(obses.shape)
+        for i,obs in enumerate(obses):
+            if i % 100 == 0:
+                print(obs[-1], ":",obs[0])
+        """
         
         return new_batch_dict
 

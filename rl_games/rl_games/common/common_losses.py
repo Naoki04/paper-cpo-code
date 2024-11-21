@@ -9,13 +9,15 @@ def critic_loss(model, value_preds_batch, values, curr_e_clip, return_batch, cli
 
 def critic_loss_sapg2(model, value_preds_batch, values, curr_e_clip, return_batch, clip_value, critic_mask):
     c_loss = default_critic_loss(value_preds_batch, values, curr_e_clip, return_batch, clip_value)
-    # critic_maskをかけて、大きさを正規化する
+  
+    # critic_maskをかけてから、大きさを正規化する
     c_loss = c_loss * critic_mask
-    w = c_loss.count_nonzero().item()/c_loss.shape[0]
+    w = critic_mask.count_nonzero().item()/c_loss.shape[0]
     c_loss = c_loss / w
+    
     return c_loss
 
-    #return model.get_value_layer().loss(value_preds_batch=value_preds_batch, values=values, curr_e_clip=curr_e_clip, return_batch=return_batch, clip_value=clip_value)
+  
 
 
 def default_critic_loss(value_preds_batch, values, curr_e_clip, return_batch, clip_value):
@@ -56,7 +58,7 @@ def actor_loss(old_action_neglog_probs_batch, action_neglog_probs, advantage, is
         a_loss = (action_neglog_probs * advantage)
     return a_loss
 
-def actor_loss_with_awac(old_action_neglog_probs_batch, action_neglog_probs, advantage, is_ppo, curr_e_clip, off_policy_mask, awac_mask, awac_lambda, awac_clip, critic_mask):
+def actor_loss_with_awac(old_action_neglog_probs_batch, action_neglog_probs, advantage, is_ppo, curr_e_clip, off_policy_mask, awac_mask, awac_lambda, awac_max, awac_alpha, critic_mask):
     # PPOロスを計算
     if is_ppo:
         ratio = torch.exp(old_action_neglog_probs_batch - action_neglog_probs)
@@ -70,30 +72,24 @@ def actor_loss_with_awac(old_action_neglog_probs_batch, action_neglog_probs, adv
     ppo_loss = ppo_loss * torch.logical_not(awac_mask) * torch.logical_not(critic_mask)
     
     # AWACロスの計算(expが爆発するのでadvantageをクリップする)
-    advantage = torch.clamp(advantage, -awac_clip, awac_clip)
-    awac_loss = torch.exp(1/awac_lambda * advantage)*old_action_neglog_probs_batch
+    awac_loss = torch.clamp(torch.exp(1/awac_lambda * advantage), max=awac_max)*old_action_neglog_probs_batch
+    
     # critic用データは取り除く
     awac_loss = awac_loss * awac_mask * torch.logical_not(critic_mask)
-    
-    # PPOロスとAWACロスをバランスするために、w=(PPOロス平均値/AWACロスの平均値)をAWACロスに掛ける
-    w = (ppo_loss.sum()/ppo_loss.count_nonzero().item()) / (awac_loss.sum()/awac_loss.count_nonzero().item())
-    a_loss = ppo_loss + w*awac_loss
+    # バランス調整のため、awac_lossを正規化する。
+    w = awac_alpha / awac_loss.abs().sum()
+    # ロスを足し合わせる
+    a_loss = ppo_loss + w*awac_loss 
     # critic用データ以外の割合で正規化
     a_loss = a_loss / (torch.logical_not(critic_mask).count_nonzero().item()/critic_mask.shape[0])
     
-    """
-    print("=======")
-    print(old_action_neglog_probs_batch)
-    print("w",w)
-    print("PPO平均ロス:",ppo_loss.sum()/ppo_loss.count_nonzero().item())
-    print("AWAC平均ロス:", awac_loss.sum()/awac_loss.count_nonzero().item())
+    
+    #print("=======")
+    #print("w",w)
+    print("PPO_loss:", ppo_loss.sum()/ppo_loss.count_nonzero().item())
     print("AWAC(バランス後):", awac_loss.sum()/awac_loss.count_nonzero().item()*w)
-    """
-    """
-    print(torch.logical_not(critic_mask).count_nonzero().item())
-    print(critic_mask.shape[0])
-    print((torch.logical_not(critic_mask).count_nonzero().item()/critic_mask.shape[0]))
-    """
+    print("lambda", awac_lambda)
+    print("alpha", awac_alpha)
     
     return a_loss
 
