@@ -170,11 +170,11 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             # オンラインデータでのみ学習するようにマスクを適用した後、正規化する
             if self.sapg2:
                 b_loss = b_loss * critic_mask
-                b_loss = b_loss / (critic_mask.count_nonzero().item() / critic_mask.shape[0])
+                #b_loss = b_loss / (critic_mask.count_nonzero().item() / critic_mask.shape[0])
                 
             # エントロピーについてもマスクを適用してから、正規化する
             entropy = entropy * critic_mask
-            entropy = entropy / (critic_mask.count_nonzero().item() / critic_mask.shape[0])
+            #entropy = entropy / (critic_mask.count_nonzero().item() / critic_mask.shape[0])
             
             if self.expl_type.startswith('mixed_expl') and self.config.get('expl_reward_type') == 'entropy':
                 ec_candidates = self.intr_reward_coef[::self.intr_coef_block_size]
