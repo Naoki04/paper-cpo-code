@@ -1092,6 +1092,7 @@ class A2CBase(BaseAlgorithm):
                 # 後半分のobsの埋め込みをずらして書き換える(後でfilterでリーダー分だけ残す)
                 obses[:, -self.intr_reward_coef_embd.shape[-1]:] = intr_coef_embd.repeat_interleave(self.horizon_length, dim=0) 
                 
+                
                 ### SAPG2 ###
                 # フォロワーのオリジナルデータをリーダーデータで書き換える。埋め込みはそのまま 
                 obses[len(val):2*len(val)-self.intr_coef_block_size*self.horizon_length, :-1] = obses[2*len(val)-self.intr_coef_block_size*self.horizon_length:2*len(val), :-1].repeat(int(len(val)/self.intr_coef_block_size/self.horizon_length-1),1)
@@ -1116,7 +1117,10 @@ class A2CBase(BaseAlgorithm):
                 new_batch_dict['off_policy_mask'] = mask # 10400中800(オリジナルじゃない分)がTrue
                 new_batch_dict['awac_mask'] = awac_mask # 10400中4000(オリジナルをリーダーデータで書き換えた分)がTrue
                 new_batch_dict['critic_mask'] = critic_mask # 10400中4800(オリジナルデータ分だけ)True
-                    
+                
+                #print(mask.count_nonzero().item()) # 800
+                #print(awac_mask.count_nonzero().item()) # 4000
+                #print(critic_mask.count_nonzero().item()) # 4800
 
             elif key in ['values', 'returns']:
                 pass  # handled below
@@ -1176,7 +1180,7 @@ class A2CBase(BaseAlgorithm):
             mb_states = extras['states'] # Nonetype
             mb_rnn_states = extras['rnn_states'] # 2, torch.Size([16, 1, 300, 768]) torch.Size([16, 1, 300, 768])
             
-            if r_k == 0: # 初めのデータについてはフォロワーデータをリーダーデータでおきかえて処理する。
+            if r_k == 0: # 初めのデータについてはフォロワーデータをリーダーデータでおきかえて処理する。(埋め込みはそのまま)
                 mb_rewards[:, :mb_rewards.shape[1]-self.intr_coef_block_size,:] = mb_rewards[:,mb_rewards.shape[1]-self.intr_coef_block_size:].repeat(1, int(mb_rewards.shape[1]/self.intr_coef_block_size-1), 1)
                 mb_obs[:, :mb_obs.shape[1]-self.intr_coef_block_size,:-1] = mb_obs[:, mb_obs.shape[1]-self.intr_coef_block_size:, :-1].repeat(1, int(mb_obs.shape[1]/self.intr_coef_block_size-1), 1)
                 last_obs_and_states["obs"][:last_obs_and_states["obs"].shape[0]-self.intr_coef_block_size,:-1] = last_obs_and_states["obs"][last_obs_and_states["obs"].shape[0]-self.intr_coef_block_size:, :-1].repeat(int(last_obs_and_states["obs"].shape[0]/self.intr_coef_block_size-1), 1)
@@ -1218,8 +1222,6 @@ class A2CBase(BaseAlgorithm):
                 mb_fdones[:, :mb_fdones.shape[1]-self.intr_coef_block_size] = mb_fdones[:, mb_fdones.shape[1]-self.intr_coef_block_size:].repeat(1, int(mb_fdones.shape[1]/self.intr_coef_block_size-1))
                 fdones[:fdones.shape[0]-self.intr_coef_block_size] = fdones[fdones.shape[0]-self.intr_coef_block_size:].repeat(int(fdones.shape[0]/self.intr_coef_block_size-1), 1).view(-1).squeeze(0)
                 
-                
-                
 
             mb_fdones = torch.cat([mb_fdones, fdones.unsqueeze(0)], dim=0)
             mb_returns = mb_rewards + (torch.roll(self.intr_reward_coef, self.intr_coef_block_size*r_k, dims=0).unsqueeze(0).unsqueeze(2) * extras['mb_intr_rewards'] if extras['mb_intr_rewards'] is not None else 0)  + self.gamma * mb_values[1:] * (1 - mb_fdones[1:]).unsqueeze(-1)
@@ -1253,6 +1255,7 @@ class A2CBase(BaseAlgorithm):
             if i % 100 == 0:
                 print(obs[-1], ":",obs[0])
         """
+       
         
         return new_batch_dict
 

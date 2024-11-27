@@ -7,7 +7,7 @@ def critic_loss(model, value_preds_batch, values, curr_e_clip, return_batch, cli
     return default_critic_loss(value_preds_batch, values, curr_e_clip, return_batch, clip_value)
     #return model.get_value_layer().loss(value_preds_batch=value_preds_batch, values=values, curr_e_clip=curr_e_clip, return_batch=return_batch, clip_value=clip_value)
 
-def critic_loss_sapg2(model, value_preds_batch, values, curr_e_clip, return_batch, clip_value, critic_mask):
+def critic_loss_sapg2(model, value_preds_batch, values, curr_e_clip, return_batch, clip_value, critic_mask, off_policy_mask):
     c_loss = default_critic_loss(value_preds_batch, values, curr_e_clip, return_batch, clip_value)
   
     # critic_maskをかけてから、大きさを正規化する
@@ -97,7 +97,7 @@ def actor_loss_with_awac(old_action_neglog_probs_batch, action_neglog_probs, adv
     # デバッグ用: 全てPPOで学習する。(1リーダーオンライン, 2フォロワーオンライン, 3リーダーオフライン, 4フォロワーAWACのうち、123をPPOで学習する。)
     # つまり、(critic_maskと,awac_maskがないもの) = AWAC_maskがないものをPPOで学習する。
     #w = awac_mask.count_nonzero().item()/awac_mask.shape[0]
-    a_loss = ppo_loss * torch.logical_not(awac_mask) #/ w
+    a_loss = ppo_loss * critic_mask #/ w
     print("==========PPO loss is used for not awac data, for debug.===============")
     
     return a_loss

@@ -149,7 +149,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             if self.has_value_loss:
                 # クリッピング付きのクリティックロス
                 if self.sapg2: # critic_maskを使用する場合(厳密にオンラインデータのみで学習する)
-                    c_loss = common_losses.critic_loss_sapg2(self.model,value_preds_batch, values, curr_e_clip, return_batch, self.clip_value, critic_mask)
+                    c_loss = common_losses.critic_loss_sapg2(self.model,value_preds_batch, values, curr_e_clip, return_batch, self.clip_value, critic_mask, off_policy_mask)
                 else:
                     c_loss = common_losses.critic_loss(self.model,value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
             else:
@@ -171,6 +171,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             if self.sapg2:
                 b_loss = b_loss * critic_mask
                 #b_loss = b_loss / (critic_mask.count_nonzero().item() / critic_mask.shape[0])
+                
                 
             # エントロピーについてもマスクを適用してから、正規化する
             entropy = entropy * critic_mask
