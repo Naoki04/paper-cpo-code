@@ -1805,6 +1805,7 @@ class ContinuousA2CBase(A2CBase):
                     self.mean_rewards = mean_rewards[0]
 
                     for i in range(self.value_size):
+                        # rewardsを記録
                         rewards_name = 'rewards' if i == 0 else 'rewards{0}'.format(i)
                         self.writer.add_scalar(rewards_name + '/step'.format(i), mean_rewards[i], frame)
                         self.writer.add_scalar(rewards_name + '/iter'.format(i), mean_rewards[i], frame)
