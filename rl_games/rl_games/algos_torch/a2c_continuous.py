@@ -169,13 +169,21 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             
             # オンラインデータでのみ学習するようにマスクを適用した後、正規化する
             if self.sapg2:
-                b_loss = b_loss * torch.logical_or(critic_mask, off_policy_mask)
-                #b_loss = b_loss / (critic_mask.count_nonzero().item() / critic_mask.shape[0])
+                b_mask = torch.logical_or(critic_mask, off_policy_mask)
+                assert b_loss.shape ==b_mask.shape, "b_loss shape: {}, b_mask shape: {}".format(b_loss.shape, b_mask.shape)
+                b_loss = b_loss * b_mask
+                w = b_mask.sum() / b_mask.numel()
+                #print("bound_w", w)
                 
                 
             # エントロピーについてもマスクを適用してから、正規化する
             if self.sapg2:
-                entropy = entropy * torch.logical_or(critic_mask, off_policy_mask)
+                entropy_mask = torch.logical_or(critic_mask, off_policy_mask)
+                assert entropy.shape == entropy_mask.shape, "entropy shape: {}, entropy_mask shape: {}".format(entropy.shape, entropy_mask.shape)
+                entropy = entropy * entropy_mask
+                w = entropy_mask.sum() / entropy_mask.numel()
+                entropy = entropy / w
+                #print("entropy_w", w)
             
             #entropy = entropy / (critic_mask.count_nonzero().item() / critic_mask.shape[0])
             
@@ -195,6 +203,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 on_policy_loss = torch.masked_select(loss_arr, ~input_dict['off_policy_mask'].unsqueeze(1)).sum() / len(input_dict['off_policy_mask'])
                 grads_off = self.get_grads(off_policy_loss)
                 grads_on = self.get_grads(on_policy_loss)
+
 
             losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss , (entropy_coef*entropy).unsqueeze(1), b_loss.unsqueeze(1)], rnn_masks)
             a_loss, c_loss, entropy_loss, b_loss = losses[0], losses[1], losses[2], losses[3]
