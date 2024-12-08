@@ -283,6 +283,7 @@ class A2CBase(BaseAlgorithm):
         self.awac_lambda = self.config.get('awac_lambda', False)
         self.awac_max = self.config.get('awac_max', False)
         self.awac_alpha = self.config.get('awac_alpha', False)
+        self.vanilla_sapg = self.config.get('vanilla_sapg', False)
         
         
         # アクターロス関数の選択
@@ -291,8 +292,10 @@ class A2CBase(BaseAlgorithm):
         else:
             self.actor_loss_func = common_losses.actor_loss
         if self.sapg2:
-            self.actor_loss_func = common_losses.actor_loss_with_awac
-            print("====Actor loss with AWAC for SAPG2 is selectrd for loss func====")
+            if self.vanilla_sapg:
+                self.actor_loss_func = common_losses.actor_loss_sapg
+            else:
+                self.actor_loss_func = common_losses.actor_loss_with_awac
             
 
         if self.normalize_advantage and self.normalize_rms_advantage:

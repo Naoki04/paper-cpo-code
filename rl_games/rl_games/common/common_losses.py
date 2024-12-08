@@ -22,6 +22,20 @@ def critic_loss_sapg2(model, value_preds_batch, values, curr_e_clip, return_batc
     
     return c_loss_masked
 
+def critic_loss_sapg(model, value_preds_batch, values, curr_e_clip, return_batch, clip_value, critic_mask, off_policy_mask):
+    c_loss = default_critic_loss(value_preds_batch, values, curr_e_clip, return_batch, clip_value)
+    # critic_maskをかけてから、大きさを正規化する
+    mask = torch.logical_or(critic_mask, off_policy_mask).unsqueeze(1)
+    assert mask.shape == c_loss.shape, "mask shape is {}, c_loss shape is {}".format(mask.shape, c_loss.shape)
+    
+    c_loss_masked = c_loss * mask
+    
+    # 使うデータの割合で正規化
+    w = mask.count_nonzero().item()/c_loss.shape[0]
+    c_loss = c_loss / w
+    
+    return c_loss_masked
+
   
 
 
@@ -113,6 +127,35 @@ def actor_loss_with_awac(old_action_neglog_probs_batch, action_neglog_probs, adv
     
     
     print("==========PPO loss is used for not awac data, for debug.===============")
+    
+    return a_loss
+
+def actor_loss_sapg(old_action_neglog_probs_batch, action_neglog_probs, advantage, is_ppo, curr_e_clip, off_policy_mask, awac_mask, awac_lambda, awac_max, awac_alpha, critic_mask):
+    # PPOロスを計算
+    if is_ppo:
+        ratio = torch.exp(old_action_neglog_probs_batch - action_neglog_probs)
+        surr1 = advantage * ratio
+        surr2 = advantage * torch.clamp(ratio, 1.0 - curr_e_clip, 1.0 + curr_e_clip)
+        ppo_loss = torch.max(-surr1, -surr2)
+        # awac maskでマスキングする
+    else:
+        ppo_loss = (action_neglog_probs * advantage)
+    
+    # critic用データとawac用データは取り除く
+    #ppo_loss = ppo_loss * torch.logical_not(awac_mask) * torch.logical_not(critic_mask)
+
+    
+    # デバッグ用: 全てPPOで学習する。(1リーダーオンライン, 2フォロワーオンライン, 3リーダーオフライン, 4フォロワーAWACのうち、123をPPOで学習する。)
+    # つまり、(critic_maskと,awac_maskがないもの) = AWAC_maskがないものをPPOで学習する。
+    #w = awac_mask.count_nonzero().item()/awac_mask.shape[0]
+    mask = torch.logical_or(critic_mask, off_policy_mask)
+    assert mask.shape == ppo_loss.shape, "mask shape is {}, ppo_loss shape is {}".format(mask.shape, ppo_loss.shape)
+    a_loss = ppo_loss * mask #/ w
+    
+    w = mask.count_nonzero().item()/mask.shape[0]
+    a_loss = a_loss / w
+    
+    print("==========PPO loss is used for critic_mask or off_policy_mask data, for debug.===============")
     
     return a_loss
 
