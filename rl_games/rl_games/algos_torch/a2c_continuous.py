@@ -142,7 +142,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             # アクターのロスを計算する部分(普通のPPOロス)
             
             if self.sapg2:
-                a_loss = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip, off_policy_mask, awac_mask, self.awac_lambda, self.awac_max, self.awac_alpha, critic_mask)
+                a_loss = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip, off_policy_mask, awac_mask, self.awac_lambda, self.awac_max, self.awac_alpha, critic_mask, self.enable_w)
             else:
                 a_loss = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip, off_policy_mask)
             
@@ -150,9 +150,9 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 # クリッピング付きのクリティックロス
                 if self.sapg2: # critic_maskを使用する場合(厳密にオンラインデータのみで学習する)
                     if self.vanilla_sapg:
-                        c_loss = common_losses.critic_loss_sapg(self.model,value_preds_batch, values, curr_e_clip, return_batch, self.clip_value, critic_mask, off_policy_mask)
+                        c_loss = common_losses.critic_loss_sapg(self.model,value_preds_batch, values, curr_e_clip, return_batch, self.clip_value, critic_mask, off_policy_mask, self.enable_w)
                     else:
-                        c_loss = common_losses.critic_loss_sapg2(self.model,value_preds_batch, values, curr_e_clip, return_batch, self.clip_value, critic_mask, off_policy_mask)
+                        c_loss = common_losses.critic_loss_sapg2(self.model,value_preds_batch, values, curr_e_clip, return_batch, self.clip_value, critic_mask, off_policy_mask, self.enable_w)
                 else:
                     c_loss = common_losses.critic_loss(self.model,value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
             else:
@@ -176,25 +176,31 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                     b_mask = torch.logical_or(critic_mask, off_policy_mask)
                 else:
                     b_mask = critic_mask
-                assert b_loss.shape ==b_mask.shape, "b_loss shape: {}, b_mask shape: {}".format(b_loss.shape, b_mask.shape)
+                assert b_loss.shape == b_mask.shape, "b_loss shape: {}, b_mask shape: {}".format(b_loss.shape, b_mask.shape)
                 b_loss = b_loss * b_mask
-                w = b_mask.sum() / b_mask.numel()
-                #print("bound_w", w)
+                
+                if self.enable_w:
+                    w = b_mask.sum() / b_mask.numel()
+                    b_loss = b_loss / w            
+                    
                 
                 
             # エントロピーについてもマスクを適用してから、正規化する
+            print("entropy info----------------")
+            print("entropy", entropy.shape)
             if self.sapg2:
                 if self.vanilla_sapg:
-                    entropy_mask = torch.logical_or(critic_mask, off_policy_mask)    
+                    entropy_mask = torch.logical_or(critic_mask, off_policy_mask)   
                 else:
                     entropy_mask = critic_mask
                 assert entropy.shape == entropy_mask.shape, "entropy shape: {}, entropy_mask shape: {}".format(entropy.shape, entropy_mask.shape)
                 entropy = entropy * entropy_mask
-                w = entropy_mask.sum() / entropy_mask.numel()
-                entropy = entropy / w
-                #print("entropy_w", w)
             
-            #entropy = entropy / (critic_mask.count_nonzero().item() / critic_mask.shape[0])
+                if self.enable_w:
+                    w = entropy_mask.sum() / entropy_mask.numel()
+                    entropy = entropy / w
+                    
+            
             
             if self.expl_type.startswith('mixed_expl') and self.config.get('expl_reward_type') == 'entropy':
                 ec_candidates = self.intr_reward_coef[::self.intr_coef_block_size]

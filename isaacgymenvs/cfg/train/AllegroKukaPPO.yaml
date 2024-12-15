@@ -53,6 +53,7 @@ params:
     awac_lambda : 0.1 # AWACではmujocoベンチに対して1.0, 複雑なロボットタスクに対して0.3を設定していた
     awac_max: 100
     awac_alpha: 10
+    enable_w: True # ミニバッチの勾配を、ミニバッチ中の有効データ数でスケーリングする。
 
 
     num_actors: ${....task.env.numEnvs}   
