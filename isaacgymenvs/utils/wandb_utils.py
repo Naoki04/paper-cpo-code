@@ -20,8 +20,10 @@ class WandbAlgoObserver(AlgoObserver):
         """
 
         import wandb
-
-        wandb_unique_id = f"uid_{experiment_name}"
+        import random
+        # 2桁のランダムな数字を追加
+        random_suffix = str(random.randint(10, 99))
+        wandb_unique_id = f"uid_{experiment_name}_{random_suffix}"
         print(f"Wandb using unique id {wandb_unique_id}")
 
         cfg = self.cfg

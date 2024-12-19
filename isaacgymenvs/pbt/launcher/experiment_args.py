@@ -126,7 +126,8 @@ def get_experiment_run_description(args):
            + (f'train.params.network.space.continuous.fixed_sigma={args.sigma} ')
            + (f'checkpoint={args.checkpoint} ' if args.checkpoint else '')
            + (" ".join(args.extra_args) + " " if args.extra_args else "")
-           + f'wandb_project={args.wandb_project}_{name_prefix} wandb_entity={args.wandb_entity} wandb_activate={args.wandb_activate} wandb_group={name_suffix} wandb_tags={args.wandb_tags} ++wandb_notes=\'{args.wandb_notes}\'')
+           #+ f'wandb_project={args.wandb_project}_{name_prefix} wandb_entity={args.wandb_entity} wandb_activate={args.wandb_activate} wandb_group={name_suffix} wandb_tags={args.wandb_tags} ++wandb_notes=\'{args.wandb_notes}\'')
+           + f'wandb_project={args.wandb_project}_{name_prefix} wandb_entity={args.wandb_entity} wandb_activate={args.wandb_activate} wandb_group={args.experiment_prefix} wandb_tags={args.wandb_tags} ++wandb_notes=\'{args.wandb_notes}\'')
     
     if args.pbt:
         # don't set seed for PBT
