@@ -20,10 +20,10 @@ class WandbAlgoObserver(AlgoObserver):
         """
 
         import wandb
-        import random
-        # 2桁のランダムな数字を追加
-        random_suffix = str(random.randint(10, 99))
-        wandb_unique_id = f"uid_{experiment_name}_{random_suffix}"
+        
+        # seedを追記
+        wandb_unique_id = f"uid_{experiment_name}_seed{self.cfg.seed}"
+        wandb_name = f"{experiment_name}_seed{self.cfg.seed}"
         print(f"Wandb using unique id {wandb_unique_id}")
 
         cfg = self.cfg
@@ -39,7 +39,8 @@ class WandbAlgoObserver(AlgoObserver):
                 notes=cfg.wandb_notes if hasattr(cfg, 'wandb_notes') else '',
                 sync_tensorboard=True,
                 id=wandb_unique_id,
-                name=experiment_name,
+                #name=experiment_name,
+                name=wandb_name,
                 resume=True,
                 settings=wandb.Settings(start_method='fork'),
             )
