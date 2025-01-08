@@ -99,9 +99,9 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
     # ロスを計算する関数
     def calc_gradients(self, input_dict):
-        value_preds_batch = input_dict['old_values'] # データ収集時の価値関数の予測値
+        value_preds_batch = input_dict['old_values'] # データ収集時の価値関数の予測値、データ拡張時に変更したobs_embで再計算されている。
         old_action_log_probs_batch = input_dict['old_logp_actions'] # データ収集時の方策の対数確率
-        advantage = input_dict['advantages']
+        advantage = input_dict['advantages'] # アドバンテージ、データ拡張時に変更したobs_embで再計算されている。
         old_mu_batch = input_dict['mu']
         old_sigma_batch = input_dict['sigma']
         return_batch = input_dict['returns']
@@ -132,17 +132,22 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
         with torch.cuda.amp.autocast(enabled=self.mixed_precision):
             res_dict = self.model(batch_dict)
-            action_log_probs = res_dict['prev_neglogp']
-            values = res_dict['values']
-            entropy = res_dict['entropy'] # [1200]
+            action_log_probs = res_dict['prev_neglogp'] # 現在のポリシーそのactionを生成する対数確率
+            values = res_dict['values'] # 現在のモデルで予測した状態価値
+            entropy = res_dict['entropy'] # [1200] # 現在のポリシーのエントロピー
             mu = res_dict['mus'] # [1200,23]
             sigma = res_dict['sigmas']
             
+            # 現在のリーダーでの行動確率を計算
+            leader_batch_dict = batch_dict.copy()
+            leader_batch_dict['obs'][:,-1] = 0
+            leader_res_dict = self.model(leader_batch_dict)
+            leader_action_log_probs = leader_res_dict['prev_neglogp']
+            #print("leader_action_log_probs: ", leader_action_log_probs.shape)
 
             # アクターのロスを計算する部分(普通のPPOロス)
-            
             if self.sapg2:
-                a_loss = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip, off_policy_mask, awac_mask, self.awac_lambda, self.awac_max, self.awac_alpha, critic_mask, self.enable_w)
+                a_loss = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, leader_action_log_probs, advantage, self.ppo, curr_e_clip, off_policy_mask, awac_mask, self.awac_lambda, self.awac_max, self.awac_alpha, critic_mask, self.enable_w)
             else:
                 a_loss = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip, off_policy_mask)
             

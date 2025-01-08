@@ -80,7 +80,7 @@ def actor_loss(old_action_neglog_probs_batch, action_neglog_probs, advantage, is
         a_loss = (action_neglog_probs * advantage)
     return a_loss
 
-def actor_loss_with_awac(old_action_neglog_probs_batch, action_neglog_probs, advantage, is_ppo, curr_e_clip, off_policy_mask, awac_mask, awac_lambda, awac_max, awac_alpha, critic_mask, enable_w):
+def actor_loss_with_awac(old_action_neglog_probs_batch, action_neglog_probs, leader_action_log_probs, advantage, is_ppo, curr_e_clip, off_policy_mask, awac_mask, awac_lambda, awac_max, awac_alpha, critic_mask, enable_w):
     # PPOロスを計算
     if is_ppo:
         ratio = torch.exp(old_action_neglog_probs_batch - action_neglog_probs)
