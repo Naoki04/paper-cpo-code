@@ -101,8 +101,13 @@ def actor_loss_with_awac(old_action_neglog_probs_batch, action_neglog_probs, lea
     # 2. awac_mask(フォロワーのオフライン学習)のデータはAWACで学習する。
     """
     # AWACロスの計算(expが爆発するのでadvantageをクリップする)
-    offline_awac_loss = -torch.clamp(torch.exp(1/awac_lambda * advantage), max=awac_max)*torch.exp(-action_neglog_probs)
+    offline_awac_loss = -torch.clamp(torch.exp(1/awac_lambda * advantage), max=awac_max)*(-action_neglog_probs)
     offline_awac_loss = offline_awac_loss * awac_mask 
+    
+    print("==== DUBUG INFO ====")
+    print("advantage: {}".format(advantage.abs().mean()))
+    print("action_neglog_probs: {}".format(action_neglog_probs.abs().mean()))
+    print(torch.clamp(torch.exp(1/awac_lambda * advantage), max=awac_max))
     
     """
     # 3. follower_online_mask(フォロワーのオンライン学習)のデータは、KL拘束付きのPPOで学習する。
