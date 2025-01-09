@@ -283,6 +283,7 @@ class A2CBase(BaseAlgorithm):
         self.awac_lambda = self.config.get('awac_lambda', False)
         self.awac_max = self.config.get('awac_max', False)
         self.awac_alpha = self.config.get('awac_alpha', False)
+        self.awac_beta = self.config.get('awac_beta', False)
         self.vanilla_sapg = self.config.get('vanilla_sapg', False)
         self.enable_w = self.config.get('enable_w', False)
         
@@ -1079,7 +1080,7 @@ class A2CBase(BaseAlgorithm):
         # デフォではNone
         if repeat_idxs is None:
             num_repeat = min(num_blocks, int(self.config['off_policy_ratio']) + 1)
-            # デフォだと3回繰り返す。1回目分は各クリティックのオンライン学習用, 2回目分はフォロワーのAWAC学習とリーダーのオンライン学習用、3回目分はリーダーのオンライン学習用、
+            # デフォだと3回繰り返す。１周目はオリジナルデータ, 2週目はリーダーデータをフォロワー埋め込み、３周目はフォロワーデータにリーダー埋め込み
             repeat_idxs = [0, 0] + [int(x) for x in np.random.choice(range(1, self.num_actors // self.intr_coef_block_size), num_repeat-1, replace=False)]
             if self.multi_gpu:
                 dist.broadcast_object_list(repeat_idxs, 0)
@@ -1100,12 +1101,17 @@ class A2CBase(BaseAlgorithm):
                 ### SAPG2 ###
                 # フォロワーのオリジナルデータをリーダーデータで書き換える。埋め込みはそのまま 
                 obses[len(val):2*len(val)-self.intr_coef_block_size*self.horizon_length, :-1] = obses[2*len(val)-self.intr_coef_block_size*self.horizon_length:2*len(val), :-1].repeat(int(len(val)/self.intr_coef_block_size/self.horizon_length-1),1)
-                # AWACの式で更新するべきデータ(フォロワーのオフライン学習データ)をマスクで管理
+                
+                # リーダーデータをフォロワー埋め込みに書き換えたデータを管理するマスク
                 awac_mask = torch.zeros(len(obses), dtype=torch.bool, device=obses.device)
                 awac_mask[len(val):2*len(val)-self.intr_coef_block_size*self.horizon_length] = True
-                # Critic学習用のオリジナルデータにマスクをかける
-                critic_mask = torch.zeros(len(obses), dtype=torch.bool, device=obses.device)
-                critic_mask[:len(val)] = True
+                # フォロワーのオンラインデータをマスクで管理
+                follower_online_mask = torch.zeros(len(obses), dtype=torch.bool, device=obses.device)
+                follower_online_mask[:len(val)-self.intr_coef_block_size*self.horizon_length] = True
+                # リーダーのオンラインデータをマスクで管理
+                leader_online_mask = torch.zeros(len(obses), dtype=torch.bool, device=obses.device)
+                leader_online_mask[len(val)-self.intr_coef_block_size*self.horizon_length: len(val)] = True
+                
                 
                 
                 mask = torch.zeros(len(obses), dtype=torch.bool, device=obses.device)
@@ -1115,17 +1121,16 @@ class A2CBase(BaseAlgorithm):
                     obses = filter_leader(obses, len(val), repeat_idxs, num_blocks)
                     mask = filter_leader(mask, len(val), repeat_idxs, num_blocks)
                     awac_mask = filter_leader(awac_mask, len(val), repeat_idxs, num_blocks)
-                    critic_mask = filter_leader(critic_mask, len(val), repeat_idxs, num_blocks)
+                    follower_online_mask = filter_leader(follower_online_mask, len(val), repeat_idxs, num_blocks)
+                    leader_online_mask = filter_leader(leader_online_mask, len(val), repeat_idxs, num_blocks)
                     
                 new_batch_dict[key] = obses
                 new_batch_dict['off_policy_mask'] = mask # 10400中800(オリジナルじゃない分)がTrue
                 new_batch_dict['awac_mask'] = awac_mask # 10400中4000(オリジナルをリーダーデータで書き換えた分)がTrue
-                new_batch_dict['critic_mask'] = critic_mask # 10400中4800(オリジナルデータ分だけ)True
+                new_batch_dict['leader_online_mask'] = leader_online_mask # 10400中800(リーダーのオンラインデータ)がTrue
+                new_batch_dict['follower_online_mask'] = follower_online_mask # 10400中800(フォロワーのオンラインデータ)がTrue
                 
-                #print(mask.count_nonzero().item()) # 800
-                #print(awac_mask.count_nonzero().item()) # 4000
-                #print(critic_mask.count_nonzero().item()) # 4800
-
+                
             elif key in ['values', 'returns']:
                 pass  # handled below
             elif key == 'rnn_states':
@@ -1723,7 +1728,9 @@ class ContinuousA2CBase(A2CBase):
         dataset_dict['sigma'] = sigmas
         dataset_dict['off_policy_mask'] = batch_dict.get('off_policy_mask', None)
         dataset_dict['awac_mask'] = batch_dict.get('awac_mask', None)
-        dataset_dict['critic_mask'] = batch_dict.get('critic_mask', None)
+        dataset_dict['leader_online_mask'] = batch_dict.get('leader_online_mask', None)
+        dataset_dict['follower_online_mask'] = batch_dict.get('follower_online_mask', None)
+        
 
         self.dataset.update_values_dict(dataset_dict)
 

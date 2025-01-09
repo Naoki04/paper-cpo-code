@@ -110,7 +110,10 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         obs_batch = self._preproc_obs(obs_batch)
         off_policy_mask = input_dict.get('off_policy_mask', None)
         awac_mask = input_dict.get('awac_mask', None)
-        critic_mask = input_dict.get('critic_mask', None)
+        leader_online_mask = input_dict.get('leader_online_mask', None)
+        follower_online_mask = input_dict.get('follower_online_mask', None)
+        
+        critic_mask = torch.logical_or(leader_online_mask, follower_online_mask) # onlineデータ
 
         lr_mul = 1.0
         curr_e_clip = self.e_clip
@@ -147,7 +150,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
             # アクターのロスを計算する部分(普通のPPOロス)
             if self.sapg2:
-                a_loss = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, leader_action_log_probs, advantage, self.ppo, curr_e_clip, off_policy_mask, awac_mask, self.awac_lambda, self.awac_max, self.awac_alpha, critic_mask, self.enable_w)
+                a_loss = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, leader_action_log_probs, advantage, self.ppo, curr_e_clip, off_policy_mask, awac_mask, leader_online_mask, follower_online_mask, self.awac_lambda, self.awac_max, self.awac_alpha, self.awac_beta, critic_mask, self.enable_w)
             else:
                 a_loss = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip, off_policy_mask)
             
@@ -191,8 +194,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 
                 
             # エントロピーについてもマスクを適用してから、正規化する
-            print("entropy info----------------")
-            print("entropy", entropy.shape)
             if self.sapg2:
                 if self.vanilla_sapg:
                     entropy_mask = torch.logical_or(critic_mask, off_policy_mask)   

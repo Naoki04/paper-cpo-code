@@ -80,8 +80,10 @@ def actor_loss(old_action_neglog_probs_batch, action_neglog_probs, advantage, is
         a_loss = (action_neglog_probs * advantage)
     return a_loss
 
-def actor_loss_with_awac(old_action_neglog_probs_batch, action_neglog_probs, leader_action_log_probs, advantage, is_ppo, curr_e_clip, off_policy_mask, awac_mask, awac_lambda, awac_max, awac_alpha, critic_mask, enable_w):
-    # PPOロスを計算
+def actor_loss_with_awac(old_action_neglog_probs_batch, action_neglog_probs, leader_action_log_probs, advantage, is_ppo, curr_e_clip, off_policy_mask, awac_mask, leader_online_mask, follower_online_mask, awac_lambda, awac_max, awac_alpha, awac_beta, critic_mask, enable_w):
+    """
+    # 1. leader_online_mask(リーダーのオンライン学習), off_policy_mask(リーダーのオンライン学習)のデータはPPOで学習する。
+    """
     if is_ppo:
         ratio = torch.exp(old_action_neglog_probs_batch - action_neglog_probs)
         surr1 = advantage * ratio
@@ -90,32 +92,59 @@ def actor_loss_with_awac(old_action_neglog_probs_batch, action_neglog_probs, lea
         # awac maskでマスキングする
     else:
         ppo_loss = (action_neglog_probs * advantage)
+        print("??????????? not PPO ????????????")
+        
+    ppo_loss = ppo_loss * torch.logical_or(leader_online_mask, off_policy_mask)
     
-    # リーダーのオンライン学習・リーダーのオフライン学習はPPOで学習する。
-    ppo_loss = ppo_loss * torch.logical_not(torch.logical_or(awac_mask, critic_mask))
     
+    """
+    # 2. awac_mask(フォロワーのオフライン学習)のデータはAWACで学習する。
+    """
     # AWACロスの計算(expが爆発するのでadvantageをクリップする)
-    awac_loss = torch.clamp(torch.exp(1/awac_lambda * advantage), max=awac_max)*old_action_neglog_probs_batch
-    # フォロワーはAWACで学習する。
-    awac_loss = awac_loss * awac_mask 
+    offline_awac_loss = -torch.clamp(torch.exp(1/awac_lambda * advantage), max=awac_max)*torch.exp(-action_neglog_probs)
+    offline_awac_loss = offline_awac_loss * awac_mask 
     
-    # バランス調整のため、awac_lossを正規化する。
-    w = awac_alpha / awac_loss.abs().sum()
-    # ロスを足し合わせる
-    a_loss = ppo_loss + w*awac_loss 
-    # critic用データ以外の割合で正規化
-    if enable_w:
-        w = torch.logical_not(critic_mask).count_nonzero().item()/critic_mask.shape[0]
-        a_loss = a_loss / w
+    """
+    # 3. follower_online_mask(フォロワーのオンライン学習)のデータは、KL拘束付きのPPOで学習する。
+    """
+    ratio = torch.exp(old_action_neglog_probs_batch - action_neglog_probs)
+    surr1 = (-(leader_action_log_probs - action_neglog_probs) + 1/awac_lambda * advantage) *ratio 
+    surr2 = (-(leader_action_log_probs - action_neglog_probs) + 1/awac_lambda * advantage) * torch.clamp(ratio, 1.0 - curr_e_clip, 1.0 + curr_e_clip)
+    online_awac_loss = torch.max(-surr1, -surr2)
+    online_awac_loss = online_awac_loss * follower_online_mask
+    
+    """
+    # 4. 各ロスのバランスを取って、最終的なロスを計算する。
+    """
+    # 勾配スケールで重み付け
+    w1 = awac_alpha / offline_awac_loss.abs().mean()
+    w2 = awac_beta / online_awac_loss.abs().mean()
+    
+    offline_awac_loss = w1 * offline_awac_loss
+    online_awac_loss = w2 * online_awac_loss
+    
+    # 合計ロス
+    a_loss = ppo_loss + offline_awac_loss + online_awac_loss
 
-    """
-    """
-    print("PPO_loss:", ppo_loss.sum()/ppo_loss.count_nonzero().item())
-    print("AWAC(バランス後):", awac_loss.sum()/awac_loss.count_nonzero().item()*w)
-    print("lambda", awac_lambda)
-    print("alpha", awac_alpha)
+    print("--- LOSS INFO ---")
+    print("ppo_loss: {}".format(ppo_loss.abs().mean()))
+    print("offline_awac_loss: {}".format(offline_awac_loss.abs().mean()))
+    print("online_awac_loss: {}".format(online_awac_loss.abs().mean()))
+    print("w1: {}, w2: {}".format(w1, w2))
+    
+    
+    # 使ったデータの割合で正規化
+    if enable_w:
+        num_used = leader_online_mask.count_nonzero().item() + off_policy_mask.count_nonzero().item() + awac_mask.count_nonzero().item() + follower_online_mask.count_nonzero().item()
+        num_data = advantage.shape[0]
+        w = num_used / num_data
+        a_loss = a_loss / w
+        print("w is {}".format(w))
+    
      
     return a_loss
+
+
 
 def actor_loss_sapg(old_action_neglog_probs_batch, action_neglog_probs, advantage, is_ppo, curr_e_clip, off_policy_mask, awac_mask, awac_lambda, awac_max, awac_alpha, critic_mask, enable_w):
     # PPOロスを計算
