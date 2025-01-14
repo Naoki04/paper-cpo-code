@@ -122,8 +122,8 @@ def actor_loss_with_awac(old_action_neglog_probs_batch, action_neglog_probs, lea
     # 4. 各ロスのバランスを取って、最終的なロスを計算する。
     """
     # 勾配スケールで重み付け
-    w1 = awac_alpha / offline_awac_loss.abs().mean()
-    w2 = awac_beta / online_awac_loss.abs().mean()
+    w1 = awac_alpha / offline_awac_loss.abs().mean().detach()
+    w2 = awac_beta / online_awac_loss.abs().mean().detach()
     
     offline_awac_loss = w1 * offline_awac_loss
     online_awac_loss = w2 * online_awac_loss
