@@ -104,10 +104,6 @@ def actor_loss_with_awac(old_action_neglog_probs_batch, action_neglog_probs, lea
     offline_awac_loss = -torch.clamp(torch.exp(1/awac_lambda * advantage), max=awac_max)*(-action_neglog_probs)
     offline_awac_loss = offline_awac_loss * awac_mask 
     
-    print("==== DUBUG INFO ====")
-    print("advantage: {}".format(advantage.abs().mean()))
-    print("action_neglog_probs: {}".format(action_neglog_probs.abs().mean()))
-    print(torch.clamp(torch.exp(1/awac_lambda * advantage), max=awac_max))
     
     """
     # 3. follower_online_mask(フォロワーのオンライン学習)のデータは、KL拘束付きのPPOで学習する。
@@ -130,6 +126,12 @@ def actor_loss_with_awac(old_action_neglog_probs_batch, action_neglog_probs, lea
     
     # 合計ロス
     a_loss = ppo_loss + offline_awac_loss + online_awac_loss
+    
+    a_loss_info = {
+        "ppo": ppo_loss.abs().mean(), 
+        "awac": offline_awac_loss.abs().mean(), 
+        "klppo": online_awac_loss.abs().mean()
+        }
 
     print("--- LOSS INFO ---")
     print("ppo_loss: {}".format(ppo_loss.abs().mean()))
@@ -147,7 +149,7 @@ def actor_loss_with_awac(old_action_neglog_probs_batch, action_neglog_probs, lea
         print("w is {}".format(w))
     
      
-    return a_loss
+    return a_loss, a_loss_info
 
 
 

@@ -417,7 +417,20 @@ class A2CBase(BaseAlgorithm):
         self.writer.add_scalar('performance/rl_update_time', update_time, frame)
         self.writer.add_scalar('performance/step_inference_time', play_time, frame)
         self.writer.add_scalar('performance/step_time', step_time, frame)
+        
+        # a_lossの内訳も渡せるように分岐
+        if type(a_losses) == dict:
+            ppo_losses = torch.tensor(a_losses['ppo'])
+            awac_losses = torch.tensor(a_losses['awac'])
+            klppo_losses = torch.tensor(a_losses['klppo'])
+            a_losses = a_losses['total']
+            # 記録
+            self.writer.add_scalar('losses/a_loss/ppo_loss', ppo_losses.mean(), frame)
+            self.writer.add_scalar('losses/a_loss/awac_loss', awac_losses.mean(), frame)
+            self.writer.add_scalar('losses/a_loss/klppo_loss', klppo_losses.mean(), frame)
+        
         self.writer.add_scalar('losses/a_loss', torch_ext.mean_list(a_losses).item(), frame)
+        
         self.writer.add_scalar('losses/c_loss', torch_ext.mean_list(c_losses).item(), frame)
 
         self.writer.add_scalar('losses/entropy', torch_ext.mean_list(entropies).item(), frame)
@@ -1311,7 +1324,7 @@ class DiscreteA2CBase(A2CBase):
         self.prepare_dataset(batch_dict)
         self.algo_observer.after_steps()
 
-        a_losses = []
+        a_losses = {"total":[], "ppo":[], "awac":[], "klppo":[]}
         c_losses = []
         entropies = []
         kls = []
@@ -1323,7 +1336,10 @@ class DiscreteA2CBase(A2CBase):
             for i in range(len(self.dataset)):
                 # ロスの計算(アクター・クリティック)と学習(ログ用に取得)、dataset(1ミニバッチ分のデータ)がinput_dictに対応
                 a_loss, c_loss, entropy, kl, last_lr, lr_mul = self.train_actor_critic(self.dataset[i])
-                a_losses.append(a_loss)
+                a_losses["total"].append(a_loss["total"])
+                a_losses["ppo"].append(a_loss["ppo"])
+                a_losses["awac"].append(a_loss["awac"])
+                a_losses["klppo"].append(a_loss["klppo"])
                 c_losses.append(c_loss)
                 ep_kls.append(kl)
                 entropies.append(entropy)
@@ -1607,7 +1623,7 @@ class ContinuousA2CBase(A2CBase):
         if self.has_central_value:
             self.train_central_value()
 
-        a_losses = []
+        a_losses = {"total":[], "ppo":[], "awac":[], "klppo":[]}
         c_losses = []
         b_losses = []
         entropies = []
@@ -1635,7 +1651,10 @@ class ContinuousA2CBase(A2CBase):
                 extra_infos['off_policy_grads'].append(extras['off_policy_grads'])
                 if 'entropies' in extras:
                     extra_infos['entropies'].append(extras['entropies'])
-                a_losses.append(a_loss)
+                a_losses["total"].append(a_loss["total"])
+                a_losses["ppo"].append(a_loss["ppo"])
+                a_losses["awac"].append(a_loss["awac"])
+                a_losses["klppo"].append(a_loss["klppo"])
                 c_losses.append(c_loss)
                 ep_kls.append(kl)
                 entropies.append(entropy)

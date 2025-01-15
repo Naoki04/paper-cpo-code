@@ -150,7 +150,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
             # アクターのロスを計算する部分(普通のPPOロス)
             if self.sapg2:
-                a_loss = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, leader_action_log_probs, advantage, self.ppo, curr_e_clip, off_policy_mask, awac_mask, leader_online_mask, follower_online_mask, self.awac_lambda, self.awac_max, self.awac_alpha, self.awac_beta, critic_mask, self.enable_w)
+                a_loss, a_loss_info = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, leader_action_log_probs, advantage, self.ppo, curr_e_clip, off_policy_mask, awac_mask, leader_online_mask, follower_online_mask, self.awac_lambda, self.awac_max, self.awac_alpha, self.awac_beta, critic_mask, self.enable_w)
             else:
                 a_loss = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip, off_policy_mask)
             
@@ -293,7 +293,13 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             bl_idxs = torch.argmax((obs_batch[:,-self.intr_reward_coef_embd.shape[1]] == bl_ids).float(), dim=0)
             extras["entropies"] = [torch.nan_to_num(entropy[bl_idxs == i].detach().mean()).item() for i in range(self.num_actors // self.intr_coef_block_size)]
         # ログの記録
-        self.train_result = (a_loss, c_loss, torch_ext.apply_masks([entropy.unsqueeze(1)], rnn_masks)[0][0], \
+        a_loss_dict = {
+            "total": a_loss,
+            "ppo": a_loss_info["ppo"],
+            "awac": a_loss_info["awac"],
+            "klppo": a_loss_info["klppo"],
+        }
+        self.train_result = (a_loss_dict, c_loss, torch_ext.apply_masks([entropy.unsqueeze(1)], rnn_masks)[0][0], \
             kl_dist, self.last_lr, lr_mul, \
             mu.detach(), sigma.detach(), b_loss, extras)
 
