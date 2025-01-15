@@ -150,7 +150,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
             # アクターのロスを計算する部分(普通のPPOロス)
             if self.sapg2:
-                a_loss, a_loss_info = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, leader_action_log_probs, advantage, self.ppo, curr_e_clip, off_policy_mask, awac_mask, leader_online_mask, follower_online_mask, self.awac_lambda, self.awac_max, self.awac_alpha, self.awac_beta, critic_mask, self.enable_w)
+                a_loss, a_loss_info = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, leader_action_log_probs, advantage, self.ppo, curr_e_clip, off_policy_mask, awac_mask, leader_online_mask, follower_online_mask, self.awac_lambda, self.awac_max, self.awac_alpha, self.awac_beta, self.awac_gamma, critic_mask, self.enable_w)
             else:
                 a_loss = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip, off_policy_mask)
             

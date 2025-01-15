@@ -284,6 +284,7 @@ class A2CBase(BaseAlgorithm):
         self.awac_max = self.config.get('awac_max', False)
         self.awac_alpha = self.config.get('awac_alpha', False)
         self.awac_beta = self.config.get('awac_beta', False)
+        self.awac_gamma = self.config.get('awac_gamma', False)
         self.vanilla_sapg = self.config.get('vanilla_sapg', False)
         self.enable_w = self.config.get('enable_w', False)
         

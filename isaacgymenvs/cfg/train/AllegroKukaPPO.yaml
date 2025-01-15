@@ -52,8 +52,9 @@ params:
     vanilla_sapg: False # SAPGと同じデータだけ使う設定。
     awac_lambda : 0.1 # AWACではmujocoベンチに対して1.0, 複雑なロボットタスクに対して0.3を設定していた
     awac_max: 100
-    awac_alpha: 0.1 # フォロワーオフライン学習の勾配スケール
-    awac_beta: 0.1 # フォロワーオンライン学習の勾配スケール
+    awac_alpha: 1.0 # フォロワーオフライン学習の勾配スケール
+    awac_beta: 1e-4 # フォロワーオンライン学習の勾配スケール
+    awac_gamma: 1e-2 # PPOの勾配スケール(リーダーのオンライン・オフライン学習)
     enable_w: True # ミニバッチの勾配を、ミニバッチ中の有効データ数でスケーリングする。
 
 

@@ -80,7 +80,7 @@ def actor_loss(old_action_neglog_probs_batch, action_neglog_probs, advantage, is
         a_loss = (action_neglog_probs * advantage)
     return a_loss
 
-def actor_loss_with_awac(old_action_neglog_probs_batch, action_neglog_probs, leader_action_log_probs, advantage, is_ppo, curr_e_clip, off_policy_mask, awac_mask, leader_online_mask, follower_online_mask, awac_lambda, awac_max, awac_alpha, awac_beta, critic_mask, enable_w):
+def actor_loss_with_awac(old_action_neglog_probs_batch, action_neglog_probs, leader_action_log_probs, advantage, is_ppo, curr_e_clip, off_policy_mask, awac_mask, leader_online_mask, follower_online_mask, awac_lambda, awac_max, awac_alpha, awac_beta, awac_gamma, critic_mask, enable_w):
     """
     # 1. leader_online_mask(リーダーのオンライン学習), off_policy_mask(リーダーのオンライン学習)のデータはPPOで学習する。
     """
@@ -117,12 +117,10 @@ def actor_loss_with_awac(old_action_neglog_probs_batch, action_neglog_probs, lea
     """
     # 4. 各ロスのバランスを取って、最終的なロスを計算する。
     """
-    # 勾配スケールで重み付け
-    w1 = awac_alpha / offline_awac_loss.abs().mean().detach()
-    w2 = awac_beta / online_awac_loss.abs().mean().detach()
-    
-    offline_awac_loss = w1 * offline_awac_loss
-    online_awac_loss = w2 * online_awac_loss
+    # スケーリング
+    ppo_loss = awac_alpha * ppo_loss
+    offline_awac_loss = awac_beta * offline_awac_loss
+    online_awac_loss = awac_gamma * online_awac_loss
     
     # 合計ロス
     a_loss = ppo_loss + offline_awac_loss + online_awac_loss
@@ -137,7 +135,6 @@ def actor_loss_with_awac(old_action_neglog_probs_batch, action_neglog_probs, lea
     print("ppo_loss: {}".format(ppo_loss.abs().mean()))
     print("offline_awac_loss: {}".format(offline_awac_loss.abs().mean()))
     print("online_awac_loss: {}".format(online_awac_loss.abs().mean()))
-    print("w1: {}, w2: {}".format(w1, w2))
     
     
     # 使ったデータの割合で正規化
