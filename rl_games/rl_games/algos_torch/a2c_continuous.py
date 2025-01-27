@@ -230,7 +230,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             a_loss, c_loss, entropy_loss, b_loss = losses[0], losses[1], losses[2], losses[3]
 
             loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy_loss + b_loss * self.bounds_loss_coef
-            
+            """
             print("=========")
             print("a_loss: ", a_loss)
             print("c_loss: ", c_loss* self.critic_coef*0.5)
@@ -239,7 +239,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             print("critic_coef: ", self.critic_coef)
             print("entropy_coef: ", entropy_coef)
             print("bounds_loss_coef: ", self.bounds_loss_coef)
-            
+            """
 
             if self.multi_gpu:
                 self.optimizer.zero_grad()

@@ -130,12 +130,12 @@ def actor_loss_with_awac(old_action_neglog_probs_batch, action_neglog_probs, lea
         "awac": offline_awac_loss.abs().mean(), 
         "klppo": online_awac_loss.abs().mean()
         }
-
+    """
     print("--- LOSS INFO ---")
     print("ppo_loss: {}".format(ppo_loss.abs().mean()))
     print("offline_awac_loss: {}".format(offline_awac_loss.abs().mean()))
     print("online_awac_loss: {}".format(online_awac_loss.abs().mean()))
-    
+    """
     
     # 使ったデータの割合で正規化
     if enable_w:
@@ -143,7 +143,7 @@ def actor_loss_with_awac(old_action_neglog_probs_batch, action_neglog_probs, lea
         num_data = advantage.shape[0]
         w = num_used / num_data
         a_loss = a_loss / w
-        print("w is {}".format(w))
+        #print("w is {}".format(w))
     
      
     return a_loss, a_loss_info
@@ -171,7 +171,7 @@ def actor_loss_sapg(old_action_neglog_probs_batch, action_neglog_probs, advantag
         a_loss = a_loss / w
 
     
-    print("==========PPO loss is used for critic_mask or off_policy_mask data, for debug.===============")
+    #print("==========PPO loss is used for critic_mask or off_policy_mask data, for debug.===============")
     
     return a_loss
 
