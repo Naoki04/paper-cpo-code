@@ -19,7 +19,7 @@ def critic_loss_sapg2(model, value_preds_batch, values, curr_e_clip, return_batc
     # 使うデータの割合で正規化
     if enable_w:
         w = mask.count_nonzero().item()/c_loss.shape[0]
-        c_loss_masked = c_loss_masked / w
+        c_loss_masked = c_loss_masked / w.detach()
     
     return c_loss_masked
 
@@ -35,7 +35,7 @@ def critic_loss_sapg(model, value_preds_batch, values, curr_e_clip, return_batch
     # 使うデータの割合で正規化
     if enable_w:
         w = mask.count_nonzero().item()/c_loss.shape[0]
-        c_loss_masked = c_loss_masked / w
+        c_loss_masked = c_loss_masked / w.detach()
     
     return c_loss_masked
 
@@ -142,7 +142,7 @@ def actor_loss_with_awac(old_action_neglog_probs_batch, action_neglog_probs, lea
         num_used = leader_online_mask.count_nonzero().item() + off_policy_mask.count_nonzero().item() + awac_mask.count_nonzero().item() + follower_online_mask.count_nonzero().item()
         num_data = advantage.shape[0]
         w = num_used / num_data
-        a_loss = a_loss / w
+        a_loss = a_loss / w.detach()
         #print("w is {}".format(w))
     
      
@@ -168,7 +168,7 @@ def actor_loss_sapg(old_action_neglog_probs_batch, action_neglog_probs, advantag
     
     if enable_w:
         w = mask.count_nonzero().item()/mask.shape[0]
-        a_loss = a_loss / w
+        a_loss = a_loss / w.detach()
 
     
     #print("==========PPO loss is used for critic_mask or off_policy_mask data, for debug.===============")

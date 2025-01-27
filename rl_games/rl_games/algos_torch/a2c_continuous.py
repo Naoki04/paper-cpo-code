@@ -189,7 +189,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 
                 if self.enable_w:
                     w = b_mask.sum() / b_mask.numel()
-                    b_loss = b_loss / w            
+                    b_loss = b_loss / w.detach()            
                     
                 
                 
@@ -204,7 +204,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             
                 if self.enable_w:
                     w = entropy_mask.sum() / entropy_mask.numel()
-                    entropy = entropy / w
+                    entropy = entropy / w.detach()
                     
             
             
