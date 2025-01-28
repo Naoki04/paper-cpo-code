@@ -9,6 +9,8 @@ def get_name_prefix_suffix(args):
     name_suffix += f'{"_pbt"  if args.pbt else ""}_{args.expl_type}_{args.use_others_experience}_{args.num_policies}p'
     name_suffix += f'_mgpu' if args.multi_gpu else ''
     name_suffix += f'_{datetime.now().strftime("%d_%m_%Hh%Mm%Ss")}' if args.time_str is None else f'_{args.time_str}'
+    # seedを追記する
+    name_suffix += f'_seed{args.seed}'
     return name_prefix, name_suffix
 
 def add_experiment_args(parser):
