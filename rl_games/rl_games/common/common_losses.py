@@ -101,7 +101,7 @@ def actor_loss_with_awac(old_action_neglog_probs_batch, action_neglog_probs, lea
     # 2. awac_mask(フォロワーのオフライン学習)のデータはAWACで学習する。
     """
     # AWACロスの計算(expが爆発するのでadvantageをクリップする)
-    offline_awac_loss = -torch.clamp(torch.exp(1/awac_lambda * advantage), max=awac_max)*(-action_neglog_probs)
+    offline_awac_loss = -torch.clamp(torch.exp(advantage / awac_lambda), max=awac_max)*(-action_neglog_probs)
     offline_awac_loss = offline_awac_loss * awac_mask 
     
     
@@ -109,8 +109,8 @@ def actor_loss_with_awac(old_action_neglog_probs_batch, action_neglog_probs, lea
     # 3. follower_online_mask(フォロワーのオンライン学習)のデータは、KL拘束付きのPPOで学習する。
     """
     ratio = torch.exp(old_action_neglog_probs_batch - action_neglog_probs)
-    surr1 = (-(leader_action_log_probs - action_neglog_probs) + 1/awac_lambda * advantage) *ratio 
-    surr2 = (-(leader_action_log_probs - action_neglog_probs) + 1/awac_lambda * advantage) * torch.clamp(ratio, 1.0 - curr_e_clip, 1.0 + curr_e_clip)
+    surr1 = (-(leader_action_log_probs - action_neglog_probs) + advantage/awac_lambda) *ratio 
+    surr2 = (-(leader_action_log_probs - action_neglog_probs) + advantage/awac_lambda) * torch.clamp(ratio, 1.0 - curr_e_clip, 1.0 + curr_e_clip)
     online_awac_loss = torch.max(-surr1, -surr2)
     online_awac_loss = online_awac_loss * follower_online_mask
     
