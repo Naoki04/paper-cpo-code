@@ -6,6 +6,8 @@ from rl_games.algos_torch import central_value
 from rl_games.common import common_losses
 from rl_games.common import datasets
 
+from rl_games.algos_torch.models import Discriminator
+
 from torch import optim
 import torch
 import torch.distributed as dist 
@@ -69,6 +71,34 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             self.central_value_net = central_value.CentralValueTrain(**cv_config).to(self.ppo_device)
 
         self.use_experimental_cv = self.config.get('use_experimental_cv', True) # 共通価値ネットワークを使用するかどうかのフラグ
+        
+        # Discriminatorの構築(state -> one-hot vector)
+        self.use_ad_reward = self.config.get('use_ad_reward', False)
+        
+        if self.use_ad_reward:
+            # Discriminatorの構築
+            discriminator_config = self.config.get('discriminator_config', None)
+            assert discriminator_config is not None, "discriminator_config is None."
+            
+            activation_name = discriminator_config["activation"]
+            
+            
+            print("==== Discriminator is build. ====")
+            print("input_shape: ", self.obs_shape)
+            print("hidden_dim: ", discriminator_config["units"])
+            print("num_agents: ", int(self.num_actors/self.intr_coef_block_size))
+            print("activation: ", activation_name)
+            print("=================================")
+            
+            self.discriminator = Discriminator(
+                input_shape=self.obs_shape[0], # 埋め込みを含まない観測値の形状
+                hidden_dim=list(discriminator_config["units"]), # 隠れ層の次元数
+                num_agents=int(self.num_actors/self.intr_coef_block_size), # エージェント数
+                activation_name=activation_name # 活性化関数
+            ).to(self.ppo_device)
+            self.ad_reward_coef = self.config.get('ad_reward_coef', None) # Discriminatorの報酬係数
+            self.disc_optimizer = optim.Adam(self.discriminator.parameters(), float(self.last_lr), eps=1e-08, weight_decay=self.weight_decay)
+            self.disc_loss_func = torch.nn.CrossEntropyLoss(reduction='none') # 敵対的報酬の計算に使うので、reduceはしない。
         
         # ロールアウトバッファの構築
         self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, self.is_discrete, self.is_rnn, self.ppo_device, self.seq_length)

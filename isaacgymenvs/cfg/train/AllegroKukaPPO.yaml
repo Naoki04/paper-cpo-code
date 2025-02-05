@@ -57,6 +57,14 @@ params:
     awac_gamma: 1e-2 # PPOの勾配スケール(リーダーのオンライン・オフライン学習)
     enable_w: True # ミニバッチの勾配を、ミニバッチ中の有効データ数でスケーリングする。
 
+    # 敵対的報酬の設定
+    use_ad_reward: True
+    discriminator_config: 
+      units: [1024, 1024, 512, 512]
+      activation: elu
+    ad_reward_coef: 1.0
+      
+
 
     num_actors: ${....task.env.numEnvs}   
     gamma: 0.99

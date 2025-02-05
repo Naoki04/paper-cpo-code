@@ -863,110 +863,119 @@ class A2CBase(BaseAlgorithm):
         return obs_batch
 
     def play_steps(self):
-        update_list = self.update_list
-        step_time = 0.0
-        
-        if self.is_rnn:
-            mb_rnn_states = self.mb_rnn_states
-            rnn_state_buffer = [torch.zeros((self.horizon_length, *s.shape), dtype=s.dtype, device=s.device) for s in self.rnn_states]
-
-        for n in range(self.horizon_length):
+        with torch.no_grad():
+            update_list = self.update_list
+            step_time = 0.0
+            
             if self.is_rnn:
-                if n % self.seq_length == 0:
-                    for s, mb_s in zip(self.rnn_states, mb_rnn_states):
-                        mb_s[n // self.seq_length,:,:,:] = s
+                mb_rnn_states = self.mb_rnn_states
+                rnn_state_buffer = [torch.zeros((self.horizon_length, *s.shape), dtype=s.dtype, device=s.device) for s in self.rnn_states]
+            
+            # データを収集し、バッファに格納(horizon_length分)
+            for n in range(self.horizon_length):
+                if self.is_rnn:
+                    if n % self.seq_length == 0:
+                        for s, mb_s in zip(self.rnn_states, mb_rnn_states):
+                            mb_s[n // self.seq_length,:,:,:] = s
 
-                for i, s in enumerate(self.rnn_states):
-                    rnn_state_buffer[i][n,:,:,:] = s
+                    for i, s in enumerate(self.rnn_states):
+                        rnn_state_buffer[i][n,:,:,:] = s
 
+                    if self.has_central_value:
+                        self.central_value_net.pre_step_rnn(n)
+
+                if self.use_action_masks:
+                    masks = self.vec_env.get_action_masks()
+                    res_dict = self.get_masked_action_values(self.obs, masks)
+                else:
+                    res_dict = self.get_action_values(self.obs, self.rnn_states)
+
+                if self.is_rnn:
+                    self.rnn_states = res_dict['rnn_states']
+                self.experience_buffer.update_data('obses', n, self.obs['obs'])
+                self.experience_buffer.update_data('dones', n, self.dones.byte())
+
+                for k in update_list:
+                    self.experience_buffer.update_data(k, n, res_dict[k])
                 if self.has_central_value:
-                    self.central_value_net.pre_step_rnn(n)
+                    self.experience_buffer.update_data('states', n, self.obs['states'])
 
-            if self.use_action_masks:
-                masks = self.vec_env.get_action_masks()
-                res_dict = self.get_masked_action_values(self.obs, masks)
+                step_time_start = time.time()
+                self.obs, rewards, intr_rewards, self.dones, infos = self.env_step(res_dict['actions'])
+                
+                step_time_end = time.time()
+
+                step_time += (step_time_end - step_time_start)
+
+                shaped_rewards = self.rewards_shaper(rewards)
+                intr_rewards = self.rewards_shaper(intr_rewards)
+
+                if self.value_bootstrap and 'time_outs' in infos:
+                    shaped_rewards += self.gamma * res_dict['values'] * self.cast_obs(infos['time_outs']).unsqueeze(1).float()
+
+                self.experience_buffer.update_data('rewards', n, shaped_rewards)
+                self.experience_buffer.update_data('intr_rewards', n, intr_rewards)
+
+                self.current_rewards += rewards
+                self.current_shaped_rewards += shaped_rewards
+                self.current_lengths += 1
+                all_done_indices = self.dones.nonzero(as_tuple=False)
+                env_done_indices = all_done_indices[::self.num_agents]
+
+                if self.is_rnn and len(all_done_indices) > 0:
+                    if self.zero_rnn_on_done:
+                        for s in self.rnn_states:
+                            s[:, all_done_indices, :] = s[:, all_done_indices, :] * 0.0
+                    if self.has_central_value:
+                        self.central_value_net.post_step_rnn(all_done_indices)
+
+                if len(env_done_indices[env_done_indices >= self.ignore_env_boundary]) > 0:
+                    indices = env_done_indices[env_done_indices >= self.ignore_env_boundary].view(-1, 1)
+                    self.game_rewards.update(self.current_rewards[indices])
+                    self.game_shaped_rewards.update(self.current_shaped_rewards[indices])
+                    self.game_lengths.update(self.current_lengths[indices])
+                self.algo_observer.process_infos(infos, env_done_indices, ignore_env_boundary=self.ignore_env_boundary)
+
+                not_dones = 1.0 - self.dones.float()
+
+                self.current_rewards = self.current_rewards * not_dones.unsqueeze(1)
+                self.current_shaped_rewards = self.current_shaped_rewards * not_dones.unsqueeze(1)
+                self.current_lengths = self.current_lengths * not_dones
+
+            """
+            # 価値の取得とGAEの計算
+            """
+            # クリティックで価値を予測
+            last_values = self.get_values(self.obs, self.rnn_states)
+
+            fdones = self.dones.float()
+            mb_fdones = self.experience_buffer.tensor_dict['dones'].float()
+
+            mb_values = self.experience_buffer.tensor_dict['values']
+            mb_rewards = self.experience_buffer.tensor_dict['rewards'] # 外的報酬
+            mb_intr_rewards = self.experience_buffer.tensor_dict['intr_rewards'] # 内的報酬
+            
+            if self.intr_reward_coef is not None:
+                mb_total_rewards = mb_rewards + self.intr_reward_coef.unsqueeze(0).unsqueeze(2) * mb_intr_rewards # 内的報酬と外的報酬の足し合わせ
             else:
-                res_dict = self.get_action_values(self.obs, self.rnn_states)
+                mb_total_rewards = mb_rewards
+            
+            # GAEの計算
+            mb_advs = self.discount_values(fdones, last_values, mb_fdones, mb_values, mb_total_rewards)
+            mb_returns = mb_advs + mb_values
+            batch_dict = self.experience_buffer.get_transformed_list(swap_and_flatten01, self.tensor_list)
 
+            batch_dict['returns'] = swap_and_flatten01(mb_returns)
+            batch_dict['played_frames'] = self.batch_size
             if self.is_rnn:
-                self.rnn_states = res_dict['rnn_states']
-            self.experience_buffer.update_data('obses', n, self.obs['obs'])
-            self.experience_buffer.update_data('dones', n, self.dones.byte())
+                states = []
+                for mb_s in mb_rnn_states:
+                    t_size = mb_s.size()[0] * mb_s.size()[2]
+                    h_size = mb_s.size()[3]
+                    states.append(mb_s.permute(1,2,0,3).reshape(-1,t_size, h_size))
 
-            for k in update_list:
-                self.experience_buffer.update_data(k, n, res_dict[k])
-            if self.has_central_value:
-                self.experience_buffer.update_data('states', n, self.obs['states'])
-
-            step_time_start = time.time()
-            self.obs, rewards, intr_rewards, self.dones, infos = self.env_step(res_dict['actions'])
-            step_time_end = time.time()
-
-            step_time += (step_time_end - step_time_start)
-
-            shaped_rewards = self.rewards_shaper(rewards)
-            intr_rewards = self.rewards_shaper(intr_rewards)
-
-            if self.value_bootstrap and 'time_outs' in infos:
-                shaped_rewards += self.gamma * res_dict['values'] * self.cast_obs(infos['time_outs']).unsqueeze(1).float()
-
-            self.experience_buffer.update_data('rewards', n, shaped_rewards)
-            self.experience_buffer.update_data('intr_rewards', n, intr_rewards)
-
-            self.current_rewards += rewards
-            self.current_shaped_rewards += shaped_rewards
-            self.current_lengths += 1
-            all_done_indices = self.dones.nonzero(as_tuple=False)
-            env_done_indices = all_done_indices[::self.num_agents]
-
-            if self.is_rnn and len(all_done_indices) > 0:
-                if self.zero_rnn_on_done:
-                    for s in self.rnn_states:
-                        s[:, all_done_indices, :] = s[:, all_done_indices, :] * 0.0
-                if self.has_central_value:
-                    self.central_value_net.post_step_rnn(all_done_indices)
-
-            if len(env_done_indices[env_done_indices >= self.ignore_env_boundary]) > 0:
-                indices = env_done_indices[env_done_indices >= self.ignore_env_boundary].view(-1, 1)
-                self.game_rewards.update(self.current_rewards[indices])
-                self.game_shaped_rewards.update(self.current_shaped_rewards[indices])
-                self.game_lengths.update(self.current_lengths[indices])
-            self.algo_observer.process_infos(infos, env_done_indices, ignore_env_boundary=self.ignore_env_boundary)
-
-            not_dones = 1.0 - self.dones.float()
-
-            self.current_rewards = self.current_rewards * not_dones.unsqueeze(1)
-            self.current_shaped_rewards = self.current_shaped_rewards * not_dones.unsqueeze(1)
-            self.current_lengths = self.current_lengths * not_dones
-
-        last_values = self.get_values(self.obs, self.rnn_states)
-
-        fdones = self.dones.float()
-        mb_fdones = self.experience_buffer.tensor_dict['dones'].float()
-
-        mb_values = self.experience_buffer.tensor_dict['values']
-        mb_rewards = self.experience_buffer.tensor_dict['rewards']
-        mb_intr_rewards = self.experience_buffer.tensor_dict['intr_rewards']
-        if self.intr_reward_coef is not None:
-            mb_total_rewards = mb_rewards + self.intr_reward_coef.unsqueeze(0).unsqueeze(2) * mb_intr_rewards
-        else:
-            mb_total_rewards = mb_rewards
-        
-        mb_advs = self.discount_values(fdones, last_values, mb_fdones, mb_values, mb_total_rewards)
-        mb_returns = mb_advs + mb_values
-        batch_dict = self.experience_buffer.get_transformed_list(swap_and_flatten01, self.tensor_list)
-
-        batch_dict['returns'] = swap_and_flatten01(mb_returns)
-        batch_dict['played_frames'] = self.batch_size
-        if self.is_rnn:
-            states = []
-            for mb_s in mb_rnn_states:
-                t_size = mb_s.size()[0] * mb_s.size()[2]
-                h_size = mb_s.size()[3]
-                states.append(mb_s.permute(1,2,0,3).reshape(-1,t_size, h_size))
-
-            batch_dict['rnn_states'] = states
-        batch_dict['step_time'] = step_time
+                batch_dict['rnn_states'] = states
+            batch_dict['step_time'] = step_time
         
         extras = {
             'rewards' : mb_rewards, 
@@ -980,6 +989,54 @@ class A2CBase(BaseAlgorithm):
             'mb_intr_rewards' : mb_intr_rewards if self.intr_reward_model is not None else None,
             'mb_extr_rewards' : mb_rewards,
         }
+        
+        """
+        # Discriminatorの学習・敵対的報酬を含んだreturnを計算
+        """
+        if self.use_ad_reward:
+            with torch.enable_grad():  
+            # 埋め込みを除いたobsを取得
+                pure_obs = self.experience_buffer.tensor_dict['obses'][:, :, :-self.intr_reward_coef_embd.shape[-1]]
+                pure_obs_flat = pure_obs.view(-1, *pure_obs.shape[2:])
+                pure_obs_flat = pure_obs_flat.detach().clone().requires_grad_()
+                
+                # どのエージェントが収集したかを示すclass-labelを作成(0はリーダー)
+                step_per_block = pure_obs_flat.shape[0] // (self.num_actors // self.intr_coef_block_size) # 1ブロックあたりのデータのステップ数
+                y_label = torch.arange(self.num_actors // self.intr_coef_block_size, device=self.ppo_device).flip(0).repeat_interleave(step_per_block).long()
+            
+                # discriminatorで推論・誤差の計算
+                y_pred = self.discriminator(pure_obs_flat)
+                
+                # discriminatorの更新
+                self.disc_optimizer.zero_grad()
+                disc_loss_array = self.disc_loss_func(y_pred, y_label) # あとで敵対的報酬を計算するのに使う
+                disc_loss = disc_loss_array.mean()
+                
+                disc_loss.backward()
+                self.disc_optimizer.step()
+            
+            
+            # 敵対的報酬を計算
+            with torch.no_grad():
+                # 平均取る前のロスを取得
+                disc_loss_array = disc_loss_array.detach().clone()
+                # 係数をかけ、負の値にすることで報酬に変換。リーダーについては無効化。
+                followers_mask = (y_label != 0)
+                ad_rewards = - disc_loss_array * self.ad_reward_coef * followers_mask # 負の値にすることで報酬に変換
+                ad_rewards = ad_rewards.view(self.horizon_length, -1, 1)
+                
+                # adversarial rewardを含めたreturnを再計算
+                reward_with_ad_rew = mb_rewards + ad_rewards
+                
+                mb_advs_with_ad_rew = self.discount_values(fdones, last_values, mb_fdones, mb_values, reward_with_ad_rew)
+                mb_returns_with_ad_rew = mb_advs_with_ad_rew + mb_values
+
+                # 値を渡す
+                batch_dict['returns_with_ad_rew'] = swap_and_flatten01(mb_returns_with_ad_rew)
+                
+                extras["ad_reward_mean"] = ad_rewards.mean().item()*(followers_mask.sum().item()/ad_rewards.shape[1])
+                extras["disc_loss_mean"] = disc_loss_array.mean().item()
+        
         return batch_dict, extras
     
     def augment_batch_for_mixed_expl(self, batch_dict, extras, repeat_idxs=None):
@@ -1184,14 +1241,17 @@ class A2CBase(BaseAlgorithm):
                     new_batch_dict[key] = filter_leader(new_batch_dict[key], len(val), repeat_idxs, num_blocks)
 
         
-        ##### ここ実装する！！！！#####
+        
         # new_batch_dictには1.リーダーデータ(フォロワー埋め込み)4000、2.リーダーデータリーダー埋め込み(800)、3.フォロワーデータリーダー埋め込み(800)が入っており、1と3はreturnとvalueの再計算が必要。
         # # フォロワーデータに関しては、リーダーデータに書き換えて、価値とリターンを再計算する。リーダーのオンラインデータはそのまま。
         # クリティック学習用のオリジナルデータは更新しないので、そのまま入れておく。
-        new_returns_list = [batch_dict['returns']]
+        
         new_values_list = [batch_dict['values']]
-        
-        
+        # 敵対的報酬を使う場合、オリジナルデータは敵対的報酬を含んだreturnを使う。オフライン学習用のデータには敵対的報酬を含めないreturnを使う。
+        if self.use_ad_reward: 
+            new_returns_list = [batch_dict['returns_with_ad_rew']]
+        else:
+            new_returns_list = [batch_dict['returns']]
         
         
         # 繰り返し分はもとのコードで処理する。
@@ -1313,8 +1373,9 @@ class DiscreteA2CBase(A2CBase):
         self.set_eval()
         play_time_start = time.time()
 
-        with torch.no_grad():
-            batch_dict = self.play_steps()
+        #with torch.no_grad():
+        #    batch_dict = self.play_steps()
+        batch_dict = self.play_steps()
         self.set_train()
 
         play_time_end = time.time()
@@ -1637,8 +1698,11 @@ class ContinuousA2CBase(A2CBase):
             'off_policy_grads' : [],
             'entropies' : [],
             'mb_intr_rewards' : ps_extras['mb_intr_rewards'],
-            'mb_extr_rewards' :ps_extras['rewards']
+            'mb_extr_rewards' :ps_extras['rewards'],
         }
+        if self.use_ad_reward:
+            extra_infos["ad_reward_mean"] = ps_extras["ad_reward_mean"]
+            extra_infos["disc_loss_mean"] = ps_extras["disc_loss_mean"]
 
         for mini_ep in range(0, self.mini_epochs_num):
             ep_kls = []
@@ -1649,7 +1713,8 @@ class ContinuousA2CBase(A2CBase):
                 extra_infos['on_policy_contrib'].append(extras['on_policy_contrib'])
                 extra_infos['on_policy_grads'].append(extras['on_policy_grads'])
                 extra_infos['off_policy_contrib'].append(extras['off_policy_contrib'])
-                extra_infos['off_policy_grads'].append(extras['off_policy_grads'])
+                extra_infos['off_policy_grads'].append(extras['off_policy_grads'])                
+                
                 if 'entropies' in extras:
                     extra_infos['entropies'].append(extras['entropies'])
                 a_losses["total"].append(a_loss["total"])
@@ -1848,6 +1913,11 @@ class ContinuousA2CBase(A2CBase):
                     self.writer.add_scalar('episode_lengths/step', mean_lengths, frame)
                     self.writer.add_scalar('episode_lengths/iter', mean_lengths, frame)
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, frame)
+                    
+                    # 敵対的報酬とdiscriminatorのlossを記録
+                    self.writer.add_scalar('adversarial/ad_rew_per_envstep', np.array(extra_infos['ad_reward_mean']), frame)
+                    self.writer.add_scalar('adversarial/disc_loss', np.array(extra_infos['disc_loss_mean']), frame)
+                
 
                     self.writer.add_histogram('auxiliary_stats/off_policy_contrib', np.array(extra_infos['off_policy_contrib']), frame)
                     self.writer.add_histogram('auxiliary_stats/on_policy_contrib', np.array(extra_infos['on_policy_contrib']), frame)

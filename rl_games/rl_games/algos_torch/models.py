@@ -508,4 +508,40 @@ class ModelSACContinuous(BaseModel):
             return dist
 
 
+"""
+# Discriminatorの定義 
+"""
+class Discriminator(nn.Module):
+    def __init__(self, input_shape, hidden_dim, num_agents, activation_name):
+        """
+        Discriminator: 状態からエージェントを識別するモデル
 
+        Args:
+            state_dim (int): 状態の次元数
+            hidden_dim (int): 隠れ層のユニット数
+            num_agents (int): エージェントの数 (分類数)
+        """
+        super(Discriminator, self).__init__()
+        self.fc1 = nn.Linear(input_shape, hidden_dim[0])
+        self.fc2 = nn.Linear(hidden_dim[0], hidden_dim[1])
+        self.fc3 = nn.Linear(hidden_dim[1], hidden_dim[2])  
+        self.fc4 = nn.Linear(hidden_dim[2], hidden_dim[3])
+        self.fc5 = nn.Linear(hidden_dim[3], num_agents)
+        self.softmax = nn.Softmax(dim=1)
+        
+        if activation_name == 'relu':
+            self.activation = torch.nn.ReLU()
+        elif activation_name == 'elu':
+            self.activation = torch.nn.ELU()
+        else:
+            raise ValueError('Not implemented activation function')
+        
+    def forward(self, x):
+        x = self.activation(self.fc1(x))
+        x = self.activation(self.fc2(x))
+        x = self.activation(self.fc3(x))
+        x = self.activation(self.fc4(x))
+        x = self.fc5(x)
+        y = self.softmax(x)
+        
+        return y
