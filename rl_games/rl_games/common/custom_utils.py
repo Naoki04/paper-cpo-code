@@ -50,7 +50,7 @@ def create_sinusoidal_encoding(arr, dim, n=10):
     return torch.cat([torch.sin(arr.unsqueeze(-1) / denom), torch.cos(arr.unsqueeze(-1) / denom)], dim=-1)
 
 
-def filter_leader(val, orig_len, repeat_idxs, num_blocks):
+def filter_leader(val, orig_len, repeat_idxs, num_blocks, required_mask):
     """
     Filters data corresponding to leader i.e. evaluation policy
     Used with mixed_expl
@@ -63,17 +63,24 @@ def filter_leader(val, orig_len, repeat_idxs, num_blocks):
         new_val: [4800*2+800, 100]
         
     """
+    
     if len(val) > 1:
+        """
         bsize = orig_len // num_blocks # 4800/6 = 800
         filtered_val = []
+        
         for i, idx in enumerate(repeat_idxs):#(i,idx)=(0,1,2),(0,0,?))
             if idx == 0:
                 filtered_val.append(val[i*orig_len:(i+1)*orig_len]) # [0:4800]を取り出す(オリジナル全て)
             else:
                 filtered_val.append(val[i*orig_len + (idx-1)*bsize:i*orig_len + idx*bsize]) # [?x4800: ?x4800+800]を取り出す
         new_val = torch.cat(filtered_val, dim=0)
+        """
+        # マスクに従って取り出す
+        new_val = val[required_mask.bool()]
         
     else: # axis = 1
+        """
         bsize = orig_len // num_blocks
         filtered_val = []
         for i, idx in enumerate(repeat_idxs):
@@ -82,5 +89,10 @@ def filter_leader(val, orig_len, repeat_idxs, num_blocks):
             else:
                 filtered_val.append(val[:, i*orig_len + (idx-1)*bsize:i*orig_len + idx*bsize])
         new_val = torch.cat(filtered_val, dim=1)
+        """
+        # マスクに従って取り出す(val.shape=[1, num_envs * reprat,??])で来るのでこの対応。
+        horizon_steps = required_mask.shape[0]//val.shape[1]
+        new_val = val[:, required_mask[::horizon_steps].bool()]
         
+    
     return new_val

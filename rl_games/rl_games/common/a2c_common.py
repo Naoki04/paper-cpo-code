@@ -286,7 +286,6 @@ class A2CBase(BaseAlgorithm):
         self.awac_beta = self.config.get('awac_beta', False)
         self.awac_gamma = self.config.get('awac_gamma', False)
         self.vanilla_sapg = self.config.get('vanilla_sapg', False)
-        self.enable_w = self.config.get('enable_w', False)
         
         
         # アクターロス関数の選択
@@ -1156,8 +1155,13 @@ class A2CBase(BaseAlgorithm):
             if self.multi_gpu:
                 dist.broadcast_object_list(repeat_idxs, 0)
                 
-                
-        for key, val in batch_dict.items():
+        # key=obses が最初に来るようにソート(maskをobsesで生成するため)
+        from collections import OrderedDict
+        sorted_keys = ['obses'] + [k for k in batch_dict.keys() if k != 'obses']
+        ordered_batch_dict = OrderedDict((k, batch_dict[k]) for k in sorted_keys)
+        
+        #for key, val in batch_dict.items():
+        for key, val in ordered_batch_dict.items():
             if key in ['played_frames', 'step_time']:
                 new_batch_dict[key] = val
             elif key == 'obses':
@@ -1183,17 +1187,19 @@ class A2CBase(BaseAlgorithm):
                 leader_online_mask = torch.zeros(len(obses), dtype=torch.bool, device=obses.device)
                 leader_online_mask[len(val)-self.intr_coef_block_size*self.horizon_length: len(val)] = True
                 
-                
-                
                 mask = torch.zeros(len(obses), dtype=torch.bool, device=obses.device)
-                mask[2*len(val):] = True # maskはオリジナル分だけFalse. (9600)
+                mask[2*len(val):] = True # maskはオフライン分だけTrue. (800))
                 if self.use_others_experience == 'lf': # leader follower type update
-                    # オリジナル1個分(全エージェント)と、他のエージェント1個分を取得。4800+800=5600
-                    obses = filter_leader(obses, len(val), repeat_idxs, num_blocks)
-                    mask = filter_leader(mask, len(val), repeat_idxs, num_blocks)
-                    awac_mask = filter_leader(awac_mask, len(val), repeat_idxs, num_blocks)
-                    follower_online_mask = filter_leader(follower_online_mask, len(val), repeat_idxs, num_blocks)
-                    leader_online_mask = filter_leader(leader_online_mask, len(val), repeat_idxs, num_blocks)
+                    # 使うデータに関するマスク
+                    required_mask = torch.logical_or(awac_mask, follower_online_mask)
+                    required_mask = torch.logical_or(required_mask, leader_online_mask)
+                    required_mask = torch.logical_or(required_mask, mask)
+                    
+                    obses = filter_leader(obses, len(val), repeat_idxs, num_blocks, required_mask)
+                    mask = filter_leader(mask, len(val), repeat_idxs, num_blocks, required_mask)
+                    awac_mask = filter_leader(awac_mask, len(val), repeat_idxs, num_blocks, required_mask)
+                    follower_online_mask = filter_leader(follower_online_mask, len(val), repeat_idxs, num_blocks, required_mask)
+                    leader_online_mask = filter_leader(leader_online_mask, len(val), repeat_idxs, num_blocks, required_mask)
                     
                 new_batch_dict[key] = obses
                 new_batch_dict['off_policy_mask'] = mask # 10400中800(オリジナルじゃない分)がTrue
@@ -1225,7 +1231,7 @@ class A2CBase(BaseAlgorithm):
                     
                     
                     if self.use_others_experience == 'lf':
-                        new_batch_dict[key] = [filter_leader(new_batch_dict[key][i], val[i].shape[1], repeat_idxs, num_blocks) for i in range(len(val))]
+                        new_batch_dict[key] = [filter_leader(new_batch_dict[key][i], val[i].shape[1], repeat_idxs, num_blocks, required_mask) for i in range(len(val))]
                 else:
                     new_batch_dict[key] = None
             else:
@@ -1238,7 +1244,7 @@ class A2CBase(BaseAlgorithm):
                     new_batch_dict[key][len(val):2*len(val)-self.intr_coef_block_size*self.horizon_length] = new_batch_dict[key][2*len(val)-self.intr_coef_block_size*self.horizon_length:2*len(val)].repeat(int(len(val)/self.intr_coef_block_size/self.horizon_length-1), 1).view(-1).squeeze(0)    
                 
                 if self.use_others_experience == 'lf': # leader follower type update
-                    new_batch_dict[key] = filter_leader(new_batch_dict[key], len(val), repeat_idxs, num_blocks)
+                    new_batch_dict[key] = filter_leader(new_batch_dict[key], len(val), repeat_idxs, num_blocks, required_mask)
 
         
         
@@ -1322,22 +1328,12 @@ class A2CBase(BaseAlgorithm):
         new_batch_dict['returns'] = torch.cat(new_returns_list, dim=0)
         new_batch_dict['values'] = torch.cat(new_values_list, dim=0)
         if self.use_others_experience == 'lf':
-            new_batch_dict['returns'] = filter_leader(new_batch_dict['returns'], len(batch_dict['returns']), repeat_idxs, num_blocks)
-            new_batch_dict['values'] = filter_leader(new_batch_dict['values'], len(batch_dict['values']), repeat_idxs, num_blocks)
+            new_batch_dict['returns'] = filter_leader(new_batch_dict['returns'], len(batch_dict['returns']), repeat_idxs, num_blocks, required_mask)
+            new_batch_dict['values'] = filter_leader(new_batch_dict['values'], len(batch_dict['values']), repeat_idxs, num_blocks, required_mask)
         
         # reset obs and last obs in extras
         extras['obs'][:,:, -self.intr_reward_coef_embd.shape[-1]:] = self.intr_reward_coef_embd
         extras['last_obs']['obs'][:,-self.intr_reward_coef_embd.shape[-1]:] = self.intr_reward_coef_embd
-        
-        """
-        # obsの最後の値を10飛ばしで出力
-        print("=======")
-        obses = new_batch_dict['obses'].cpu().detach().numpy()
-        print(obses.shape)
-        for i,obs in enumerate(obses):
-            if i % 100 == 0:
-                print(obs[-1], ":",obs[0])
-        """
        
         
         return new_batch_dict
