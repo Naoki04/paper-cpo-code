@@ -1,3 +1,20 @@
+# 実験設定
+```
+export LD_LIBRARY_PATH=$HOME/.pyenv/versions/anaconda3-2023.03/envs/sapg2/lib
+
+
+
+./scripts/train_allegro_kuka.sh reorientation "test" 1 300 [] --sapg --lstm --num-expl-coef-blocks=6 --wandb-entity naoki-shitanda --ir-type=entropy --ir-coef-scale=0.005 --extra-args "train.params.config.awac_alpha=1 train.params.config.awac_beta=8e-4 train.params.config.awac_gamma=32e-2 train.params.config.awac_lambda=0.1 train.params.config.use_ad_reward=True train.params.config.ad_reward_coef=0.001 --seed 0"
+
+# checkpointを指定すると、そのcheckpointから再開する。wandbのrunは別になるので、後で統合が必要。train_dirも新しく作成される。
+./scripts/train_allegro_kuka_two_arms.sh reorientation "test" 1 300 [] --sapg --lstm --num-expl-coef-blocks=6 --wandb-entity naoki-shitanda --ir-type=entropy --ir-coef-scale=0.005 --extra-args "train.params.config.awac_alpha=1 train.params.config.awac_beta=8e-4 train.params.config.awac_gamma=32e-2 train.params.config.awac_lambda=0.1 train.params.config.use_ad_reward=True train.params.config.ad_reward_coef=0.001 --seed 0 --checkpoint=<>"
+
+
+
+```
+
+
+
 # SAPG: Split and Aggregate Policy Gradients (ICML 2024 Oral) 
 [![arXiv](https://img.shields.io/badge/arXiv-2407.20230-df2a2a.svg)](https://arxiv.org/abs/2407.20230)
 [![Static Badge](https://img.shields.io/badge/Project-sapg-a)](https://sapg-rl.github.io)

@@ -1943,7 +1943,7 @@ class ContinuousA2CBase(A2CBase):
                     checkpoint_name = self.config['name'] + '_ep_' + str(epoch_num) + '_rew_' + str(mean_rewards[0])
 
                     if self.save_freq > 0:
-                        if int(math.sqrt(epoch_num // self.save_freq)) ** 2 == epoch_num // self.save_freq and epoch_num % self.save_freq == 0:
+                        if epoch_num % self.save_freq == 0: #if int(math.sqrt(epoch_num // self.save_freq)) ** 2 == epoch_num // self.save_freq and epoch_num % self.save_freq == 0:
                             self.save(os.path.join(self.nn_dir, 'last_' + checkpoint_name), all_state_dict)
                         if epoch_num % 200 == 0:    
                             torch_ext.safe_filesystem_op(os.makedirs, os.path.join(self.experiment_dir, 'last'), exist_ok=True)
