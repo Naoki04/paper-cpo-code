@@ -74,10 +74,10 @@ params:
     schedule_type: standard
     kl_threshold: 0.016
     score_to_win: 1000000
-    max_epochs: 100 #52000 #(20G)#1000000
+    max_epochs: 52000 #(20G)#1000000
     max_frames: 100_000_000_000
     save_best_after: 100
-    save_frequency: 10 #3000
+    save_frequency: 5200 #3000
     print_stats: True
     grad_norm: 1.0
     entropy_coef: 0.0
