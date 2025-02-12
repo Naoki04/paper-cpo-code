@@ -1913,8 +1913,9 @@ class ContinuousA2CBase(A2CBase):
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, frame)
                     
                     # 敵対的報酬とdiscriminatorのlossを記録
-                    self.writer.add_scalar('adversarial/ad_rew_per_envstep', np.array(extra_infos['ad_reward_mean']), frame)
-                    self.writer.add_scalar('adversarial/disc_loss', np.array(extra_infos['disc_loss_mean']), frame)
+                    if self.use_ad_reward:
+                        self.writer.add_scalar('adversarial/ad_rew_per_envstep', np.array(extra_infos['ad_reward_mean']), frame)
+                        self.writer.add_scalar('adversarial/disc_loss', np.array(extra_infos['disc_loss_mean']), frame)
                 
 
                     self.writer.add_histogram('auxiliary_stats/off_policy_contrib', np.array(extra_infos['off_policy_contrib']), frame)
