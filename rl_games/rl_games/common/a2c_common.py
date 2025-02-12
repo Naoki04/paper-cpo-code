@@ -1022,11 +1022,12 @@ class A2CBase(BaseAlgorithm):
                 disc_loss_array = disc_loss_array.detach().clone()
                 # 係数をかけ、負の値にすることで報酬に変換。リーダーについては無効化。
                 followers_mask = (y_label != 0)
+                
                 ad_rewards = - disc_loss_array * self.ad_reward_coef * followers_mask # 負の値にすることで報酬に変換
                 ad_rewards = ad_rewards.view(self.horizon_length, -1, 1)
                 
                 # adversarial rewardを含めたreturnを再計算
-                reward_with_ad_rew = mb_rewards + ad_rewards
+                reward_with_ad_rew = mb_total_rewards + ad_rewards
                 
                 mb_advs_with_ad_rew = self.discount_values(fdones, last_values, mb_fdones, mb_values, reward_with_ad_rew)
                 mb_returns_with_ad_rew = mb_advs_with_ad_rew + mb_values
