@@ -259,6 +259,7 @@ class A2CBase(BaseAlgorithm):
         self.nn_dir = os.path.join(self.experiment_dir, 'nn')
         self.summaries_dir = os.path.join(self.experiment_dir, 'summaries')
         self.batch_dir = os.path.join(self.train_dir, 'batches')
+        
 
         os.makedirs(self.train_dir, exist_ok=True)
         os.makedirs(self.experiment_dir, exist_ok=True)
@@ -287,6 +288,7 @@ class A2CBase(BaseAlgorithm):
         self.awac_gamma = self.config.get('awac_gamma', False)
         self.vanilla_sapg = self.config.get('vanilla_sapg', False)
         self.enable_w = self.config.get('enable_w', False)
+        self.save_batch = self.config.get('save_batch', False)
         
         
         # アクターロス関数の選択
@@ -1145,6 +1147,12 @@ class A2CBase(BaseAlgorithm):
         # batch_dict.keys(): dict_keys(['actions', 'neglogpacs', 'values', 'mus', 'sigmas', 'obses', 'dones', 'returns', 'played_frames', 'rnn_states', 'step_time'])
         # extras.keys(): dict_keys(['rewards', 'obs', 'last_obs', 'states', 'dones', 'last_dones', 'rnn_states', 'last_rnn_states', 'mb_intr_rewards', 'mb_extr_rewards'])
         # 50, 40, 30, 20, 10, 0の順で入ってくる
+        
+        # 分析のため、モデル保存のタイミングでbatch_dictとextrasを保存する。
+        if self.save_batch:
+            if self.epoch_num % self.save_freq == 0:
+                torch.save(batch_dict, os.path.join(self.batch_dir, f"batch_dict_{self.epoch_num}.pt"))
+                torch.save(extras, os.path.join(self.batch_dir, f"extras_{self.epoch_num}.pt"))
         
         new_batch_dict = {}
         num_blocks = self.num_actors // self.intr_coef_block_size
