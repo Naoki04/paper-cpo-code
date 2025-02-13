@@ -97,7 +97,9 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 activation_name=activation_name # 活性化関数
             ).to(self.ppo_device)
             self.ad_reward_coef = self.config.get('ad_reward_coef', None) # Discriminatorの報酬係数
-            self.disc_optimizer = optim.Adam(self.discriminator.parameters(), float(self.last_lr), eps=1e-08, weight_decay=self.weight_decay)
+            #self.disc_optimizer = optim.Adam(self.discriminator.parameters(), float(self.last_lr), eps=1e-08, weight_decay=self.weight_decay)
+            disc_lr = self.config.get('learning_rate', None)
+            self.disc_optimizer = optim.Adam(self.discriminator.parameters(), disc_lr, eps=1e-08, weight_decay=self.weight_decay)
             self.disc_loss_func = torch.nn.CrossEntropyLoss(reduction='none') # 敵対的報酬の計算に使うので、reduceはしない。
         
         # ロールアウトバッファの構築
