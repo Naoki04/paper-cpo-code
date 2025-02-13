@@ -1152,7 +1152,7 @@ class A2CBase(BaseAlgorithm):
         if self.save_batch:
             if self.epoch_num % self.save_freq == 0:
                 torch.save(batch_dict, os.path.join(self.batch_dir, f"batch_dict_{self.epoch_num}.pt"))
-                torch.save(extras, os.path.join(self.batch_dir, f"extras_{self.epoch_num}.pt"))
+                #torch.save(extras, os.path.join(self.batch_dir, f"extras_{self.epoch_num}.pt"))
         
         new_batch_dict = {}
         num_blocks = self.num_actors // self.intr_coef_block_size
