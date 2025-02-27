@@ -1718,6 +1718,9 @@ class ContinuousA2CBase(A2CBase):
             'on_policy_grads' : [],
             'off_policy_grads' : [],
             'entropies' : [],
+            'mean_v' : [],
+            'mean_q' : [],
+            'mean_v_pred' : [],
             'mb_intr_rewards' : ps_extras['mb_intr_rewards'],
             'mb_extr_rewards' :ps_extras['rewards'],
         }
@@ -1747,6 +1750,12 @@ class ContinuousA2CBase(A2CBase):
                 entropies.append(entropy)
                 if self.bounds_loss_coef is not None:
                     b_losses.append(b_loss)
+                    
+                if 'mean_v' in extras:
+                    extra_infos['mean_v'].append(extras['mean_v'])
+                    extra_infos['mean_q'].append(extras['mean_q'])
+                    extra_infos['mean_v_pred'].append(extras['mean_v_pred'])
+                    
 
                 self.dataset.update_mu_sigma(cmu, csigma)
                 if self.schedule_type == 'legacy':
@@ -1940,6 +1949,13 @@ class ContinuousA2CBase(A2CBase):
                         self.writer.add_scalar('adversarial/ad_rew_per_envstep', np.array(extra_infos['ad_reward_mean']), frame)
                         self.writer.add_scalar('adversarial/disc_loss', np.array(extra_infos['disc_loss_mean']), frame)
                 
+                    print(extra_infos.keys())
+                    if 'mean_v' in extra_infos:
+                        self.writer.add_scalar('values/critic_v', np.array(extra_infos['mean_v']).mean(), frame)
+                        self.writer.add_scalar('values/critic_q', np.array(extra_infos['mean_q']).mean(), frame)
+                        self.writer.add_scalar('values/critic_v_pred', np.array(extra_infos['mean_v_pred']).mean(), frame)
+                        self.writer.add_scalar('values/critic_advantage', (np.array(extra_infos['mean_q']) - np.array(extra_infos['mean_v'])).mean(), frame)
+                        self.writer.add_scalar('values/critic_v_error', (np.array(extra_infos['mean_v']) - np.array(extra_infos['mean_v_pred'])).mean(), frame)
 
                     self.writer.add_histogram('auxiliary_stats/off_policy_contrib', np.array(extra_infos['off_policy_contrib']), frame)
                     self.writer.add_histogram('auxiliary_stats/on_policy_contrib', np.array(extra_infos['on_policy_contrib']), frame)

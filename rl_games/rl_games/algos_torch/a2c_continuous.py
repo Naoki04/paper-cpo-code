@@ -187,16 +187,15 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 a_loss = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip, off_policy_mask)
             
             if self.has_value_loss:
-                # クリッピング付きのクリティックロス
-                if self.sapg2: # critic_maskを使用する場合(厳密にオンラインデータのみで学習する)
+                if self.sapg2:
                     if self.vanilla_sapg:
-                        c_loss = common_losses.critic_loss_sapg(self.model,value_preds_batch, values, curr_e_clip, return_batch, self.clip_value, critic_mask, off_policy_mask, self.enable_w)
+                        c_loss, mean_v, mean_q, mean_v_pred = common_losses.critic_loss_sapg(self.model, value_preds_batch, values, curr_e_clip, return_batch, self.clip_value, critic_mask, off_policy_mask, self.enable_w)
                     else:
-                        c_loss = common_losses.critic_loss_sapg2(self.model,value_preds_batch, values, curr_e_clip, return_batch, self.clip_value, critic_mask, off_policy_mask, self.enable_w)
+                        c_loss, mean_v, mean_q, mean_v_pred = common_losses.critic_loss_sapg2(self.model, value_preds_batch, values, curr_e_clip, return_batch, self.clip_value, critic_mask, off_policy_mask, self.enable_w)
                 else:
-                    c_loss = common_losses.critic_loss(self.model,value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
+                    c_loss = common_losses.critic_loss(self.model, value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
+                    extras = {}
             else:
-                # なし
                 c_loss = torch.zeros((len(values), 1), device=self.ppo_device)
             
             # アクターの出力範囲を制限するためのboundロス
@@ -308,6 +307,9 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             contrib_on = torch.nan_to_num(contrib_on.mean())
         
             extras = {
+                "mean_v": mean_v,
+                "mean_q": mean_q,
+                "mean_v_pred": mean_v_pred,
                 "off_policy_contrib" : contrib_off.item(),
                 "on_policy_contrib" : contrib_on.item(),
                 "off_policy_grads" : grads_off.detach().cpu(),
@@ -315,6 +317,9 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             }
         else:
             extras = {
+                "mean_v": mean_v,
+                "mean_q": mean_q,
+                "mean_v_pred": mean_v_pred,
                 "on_policy_contrib" : contrib.mean().item(),
                 "off_policy_contrib" : 0,
                 "on_policy_grads" : all_grads.detach().cpu(),
@@ -334,6 +339,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         self.train_result = (a_loss_dict, c_loss, torch_ext.apply_masks([entropy.unsqueeze(1)], rnn_masks)[0][0], \
             kl_dist, self.last_lr, lr_mul, \
             mu.detach(), sigma.detach(), b_loss, extras)
+        
 
     # ロスの計算
     def train_actor_critic(self, input_dict):

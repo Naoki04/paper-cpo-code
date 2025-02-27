@@ -21,7 +21,16 @@ def critic_loss_sapg2(model, value_preds_batch, values, curr_e_clip, return_batc
         w = mask.count_nonzero().item()/c_loss.shape[0] # .itemの時点でdetachされるので、detach()は不要
         c_loss_masked = c_loss_masked / w 
     
-    return c_loss_masked
+    # マスクされた部分のQ値とV値の平均を計算
+    masked_values = values * mask
+    masked_value_preds = value_preds_batch * mask
+    masked_returns = return_batch * mask
+    num_valid = mask.sum()
+    mean_v = masked_values.sum() / (num_valid + 1e-8)
+    mean_v_pred = masked_value_preds.sum() / (num_valid + 1e-8)
+    mean_q = masked_returns.sum() / (num_valid + 1e-8)
+    
+    return c_loss_masked, mean_v.detach().cpu().numpy(), mean_q.detach().cpu().numpy(), mean_v_pred.detach().cpu().numpy()
 
 
 def critic_loss_sapg(model, value_preds_batch, values, curr_e_clip, return_batch, clip_value, critic_mask, off_policy_mask, enable_w):
@@ -37,7 +46,16 @@ def critic_loss_sapg(model, value_preds_batch, values, curr_e_clip, return_batch
         w = mask.count_nonzero().item()/c_loss.shape[0] # .itemの時点でdetachされるので、detach()は不要
         c_loss_masked = c_loss_masked / w 
     
-    return c_loss_masked
+    # マスクされた部分のQ値とV値の平均を計算
+    masked_values = values * mask
+    masked_value_preds = value_preds_batch * mask
+    masked_returns = return_batch * mask
+    num_valid = mask.sum()
+    mean_v = masked_values.sum() / (num_valid + 1e-8)
+    mean_v_pred = masked_value_preds.sum() / (num_valid + 1e-8)
+    mean_q = masked_returns.sum() / (num_valid + 1e-8)
+    
+    return c_loss_masked, mean_v, mean_q, mean_v_pred
 
   
 
