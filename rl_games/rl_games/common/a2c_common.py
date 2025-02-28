@@ -726,7 +726,11 @@ class A2CBase(BaseAlgorithm):
         state['current_rewards'] = self.current_rewards
         state['current_shaped_rewards'] = self.current_shaped_rewards
         state['current_lengths'] = self.current_lengths
-     
+
+        # discriminatorの保存
+        if self.use_ad_reward:
+            state['ad_reward_discriminator'] = self.discriminator.state_dict()
+
         return state
 
     def set_full_state_weights(self, weights, set_epoch=True):
@@ -769,6 +773,10 @@ class A2CBase(BaseAlgorithm):
                 self.intr_reward_model.load_state_dict(weights['intr_reward_model'])
             else:
                 print('WARNING: no intr_reward_model in checkpoint')
+                
+        # discriminatorの復元
+        if self.use_ad_reward:
+            self.discriminator.load_state_dict(weights['ad_reward_discriminator'])
         
     def get_weights(self):
         state = self.get_stats_weights()
