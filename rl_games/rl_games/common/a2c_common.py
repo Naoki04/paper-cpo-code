@@ -776,7 +776,12 @@ class A2CBase(BaseAlgorithm):
                 
         # discriminatorの復元
         if self.use_ad_reward:
-            self.discriminator.load_state_dict(weights['ad_reward_discriminator'])
+            if 'ad_reward_discriminator' in weights:
+                self.discriminator.load_state_dict(weights['ad_reward_discriminator'])
+            else:
+                print("##########")
+                print('WARNING: no ad_reward_discriminator in checkpoint')
+                print("##########")
         
     def get_weights(self):
         state = self.get_stats_weights()
