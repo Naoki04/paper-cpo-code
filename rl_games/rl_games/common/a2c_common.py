@@ -1311,13 +1311,16 @@ class A2CBase(BaseAlgorithm):
                 mb_rewards[:, :mb_rewards.shape[1]-self.intr_coef_block_size,:] = mb_rewards[:,mb_rewards.shape[1]-self.intr_coef_block_size:].repeat(1, int(mb_rewards.shape[1]/self.intr_coef_block_size-1), 1)
                 mb_obs[:, :mb_obs.shape[1]-self.intr_coef_block_size,:-1] = mb_obs[:, mb_obs.shape[1]-self.intr_coef_block_size:, :-1].repeat(1, int(mb_obs.shape[1]/self.intr_coef_block_size-1), 1)
                 last_obs_and_states["obs"][:last_obs_and_states["obs"].shape[0]-self.intr_coef_block_size,:-1] = last_obs_and_states["obs"][last_obs_and_states["obs"].shape[0]-self.intr_coef_block_size:, :-1].repeat(int(last_obs_and_states["obs"].shape[0]/self.intr_coef_block_size-1), 1)
-                last_obs_and_states["states"][:last_obs_and_states["states"].shape[0]-self.intr_coef_block_size] = last_obs_and_states["states"][last_obs_and_states["states"].shape[0]-self.intr_coef_block_size:].repeat(int(last_obs_and_states["states"].shape[0]/self.intr_coef_block_size-1), 1)
-                last_rnn_states[0][:,:last_rnn_states[0].shape[1]-self.intr_coef_block_size] = last_rnn_states[0][:,last_rnn_states[0].shape[1]-self.intr_coef_block_size:].repeat(1, int(last_rnn_states[0].shape[1]/self.intr_coef_block_size-1), 1)
-                last_rnn_states[1][:,:last_rnn_states[1].shape[1]-self.intr_coef_block_size] = last_rnn_states[1][:,last_rnn_states[1].shape[1]-self.intr_coef_block_size:].repeat(1, int(last_rnn_states[1].shape[1]/self.intr_coef_block_size-1), 1)
+                if "states" in last_obs_and_states.keys():
+                    last_obs_and_states["states"][:last_obs_and_states["states"].shape[0]-self.intr_coef_block_size] = last_obs_and_states["states"][last_obs_and_states["states"].shape[0]-self.intr_coef_block_size:].repeat(int(last_obs_and_states["states"].shape[0]/self.intr_coef_block_size-1), 1)
+                if last_rnn_states is not None:
+                    last_rnn_states[0][:,:last_rnn_states[0].shape[1]-self.intr_coef_block_size] = last_rnn_states[0][:,last_rnn_states[0].shape[1]-self.intr_coef_block_size:].repeat(1, int(last_rnn_states[0].shape[1]/self.intr_coef_block_size-1), 1)
+                    last_rnn_states[1][:,:last_rnn_states[1].shape[1]-self.intr_coef_block_size] = last_rnn_states[1][:,last_rnn_states[1].shape[1]-self.intr_coef_block_size:].repeat(1, int(last_rnn_states[1].shape[1]/self.intr_coef_block_size-1), 1)
                 # mb_statesがnoneでない場合はassertion
                 assert mb_states is None, f"mb_states is None, but {type(mb_states), mb_states}"
-                mb_rnn_states[0][:,:,:mb_rnn_states[0].shape[2]-self.intr_coef_block_size] = mb_rnn_states[0][:,:,mb_rnn_states[0].shape[2]-self.intr_coef_block_size:].repeat(1,1, int(mb_rnn_states[0].shape[2]/self.intr_coef_block_size-1), 1)
-                mb_rnn_states[1][:,:,:mb_rnn_states[1].shape[2]-self.intr_coef_block_size] = mb_rnn_states[1][:,:,mb_rnn_states[1].shape[2]-self.intr_coef_block_size:].repeat(1,1, int(mb_rnn_states[1].shape[2]/self.intr_coef_block_size-1), 1)
+                if mb_rnn_states is not None:
+                    mb_rnn_states[0][:,:,:mb_rnn_states[0].shape[2]-self.intr_coef_block_size] = mb_rnn_states[0][:,:,mb_rnn_states[0].shape[2]-self.intr_coef_block_size:].repeat(1,1, int(mb_rnn_states[0].shape[2]/self.intr_coef_block_size-1), 1)
+                    mb_rnn_states[1][:,:,:mb_rnn_states[1].shape[2]-self.intr_coef_block_size] = mb_rnn_states[1][:,:,mb_rnn_states[1].shape[2]-self.intr_coef_block_size:].repeat(1,1, int(mb_rnn_states[1].shape[2]/self.intr_coef_block_size-1), 1)
                     
                 
                 
