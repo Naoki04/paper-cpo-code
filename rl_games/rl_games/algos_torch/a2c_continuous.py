@@ -74,6 +74,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         
         # Discriminatorの構築(state -> one-hot vector)
         self.use_ad_reward = self.config.get('use_ad_reward', False)
+        self.ad_reward_type = self.config.get('ad_reward_type', None)
         
         if self.use_ad_reward:
             # Discriminatorの構築
@@ -82,16 +83,24 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             
             activation_name = discriminator_config["activation"]
             
-            
             print("==== Discriminator is build. ====")
             print("input_shape: ", self.obs_shape)
             print("hidden_dim: ", discriminator_config["units"])
             print("num_agents: ", int(self.num_actors/self.intr_coef_block_size))
             print("activation: ", activation_name)
             print("=================================")
+            if self.ad_reward_type == 's':
+                disc_obs_len = self.obs_shape[0]
+            elif self.ad_reward_type == 'a':
+                disc_obs_len = self.actions_num
+            elif self.ad_reward_type == 'sa':
+                disc_obs_len = self.obs_shape[0] + self.actions_num
+            else:
+                assert False, "ad_reward_type is invalid."
+            print("disc_obs_len: ", disc_obs_len)
             
             self.discriminator = Discriminator(
-                input_shape=self.obs_shape[0], # 埋め込みを含まない観測値の形状
+                input_shape=disc_obs_len, # 埋め込みを含まない観測値の形状
                 hidden_dim=list(discriminator_config["units"]), # 隠れ層の次元数
                 num_agents=int(self.num_actors/self.intr_coef_block_size), # エージェント数
                 activation_name=activation_name # 活性化関数

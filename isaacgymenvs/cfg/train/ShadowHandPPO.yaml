@@ -59,6 +59,7 @@ params:
 
     # 敵対的報酬の設定
     use_ad_reward: True
+    ad_reward_type: "s" # 'sa', 's', 'a'
     discriminator_config: 
       units: [1024, 1024, 512, 512]
       activation: elu

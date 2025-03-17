@@ -1016,12 +1016,25 @@ class A2CBase(BaseAlgorithm):
                 pure_obs_flat = pure_obs.view(-1, *pure_obs.shape[2:])
                 pure_obs_flat = pure_obs_flat.detach().clone().requires_grad_()
                 
+                # actionを取得
+                actions_flat = self.experience_buffer.tensor_dict["actions"] # (16, n_envs, n_actions)
+                actions_flat = actions_flat.view(-1, *actions_flat.shape[2:])
+                actions_flat = actions_flat.detach().clone().requires_grad_()
+                
                 # どのエージェントが収集したかを示すclass-labelを作成(0はリーダー)
                 step_per_block = pure_obs_flat.shape[0] // (self.num_actors // self.intr_coef_block_size) # 1ブロックあたりのデータのステップ数
                 y_label = torch.arange(self.num_actors // self.intr_coef_block_size, device=self.ppo_device).flip(0).repeat_interleave(step_per_block).long()
 
+                # inputを作成
+                if self.ad_reward_type == "s":
+                    disc_input = pure_obs_flat
+                elif self.ad_reward_type == "a":
+                    disc_input = actions_flat
+                elif self.ad_reward_type == "sa":
+                    disc_input = torch.cat([pure_obs_flat, actions_flat], dim=1)
+                
                 # はじめに、敵対的報酬のための損失をdiscriminatorで計算(勾配通さない)
-                y_pred = self.discriminator(pure_obs_flat)
+                y_pred = self.discriminator(disc_input)
                 disc_loss_array = self.disc_loss_func(y_pred, y_label) # あとで敵対的報酬を計算するのに使う
                 
                 """
@@ -1048,13 +1061,13 @@ class A2CBase(BaseAlgorithm):
             # discriminatorのバッチ学習。
             with torch.enable_grad():  
                 # データをシャッフル
-                perm = torch.randperm(pure_obs_flat.shape[0])
-                pure_obs_flat = pure_obs_flat[perm].detach()
+                perm = torch.randperm(disc_input.shape[0])
+                disc_input = disc_input[perm].detach()
                 y_label = y_label[perm].detach()
                 
-                for i in range(0, pure_obs_flat.shape[0], self.minibatch_size):
+                for i in range(0, disc_input.shape[0], self.minibatch_size):
                     # ミニバッチを取得
-                    obs_batch = pure_obs_flat[i:i+self.minibatch_size]
+                    obs_batch = disc_input[i:i+self.minibatch_size]
                     y_batch = y_label[i:i+self.minibatch_size]
                     
                     # discriminatorの学習
@@ -1065,7 +1078,6 @@ class A2CBase(BaseAlgorithm):
                     disc_loss.backward()
                     self.disc_optimizer.step()
                     
-            
             
         
         return batch_dict, extras
