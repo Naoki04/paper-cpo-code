@@ -75,6 +75,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         # Discriminatorの構築(state -> one-hot vector)
         self.use_ad_reward = self.config.get('use_ad_reward', False)
         self.ad_reward_type = self.config.get('ad_reward_type', None)
+        self.off_policy_critic = self.config.get('off_policy_critic', False)
         
         if self.use_ad_reward:
             # Discriminatorの構築
@@ -154,8 +155,11 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         leader_online_mask = input_dict.get('leader_online_mask', None)
         follower_online_mask = input_dict.get('follower_online_mask', None)
         
-        critic_mask = torch.logical_or(leader_online_mask, follower_online_mask) # onlineデータ
-
+        if self.off_policy_critic:
+            critic_mask = torch.logical_or(torch.logical_or(leader_online_mask, follower_online_mask), off_policy_mask) # offpolicyデータも使用
+        else:
+            critic_mask = torch.logical_or(leader_online_mask, follower_online_mask) # onlineデータのみ使用
+            
         lr_mul = 1.0
         curr_e_clip = self.e_clip
 
