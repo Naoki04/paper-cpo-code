@@ -75,7 +75,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         # Discriminatorの構築(state -> one-hot vector)
         self.use_ad_reward = self.config.get('use_ad_reward', False)
         self.ad_reward_type = self.config.get('ad_reward_type', None)
-        self.off_policy_critic = self.config.get('off_policy_critic', False)
+        self.off_policy_ceb = self.config.get('off_policy_ceb', False)
         
         if self.use_ad_reward:
             # Discriminatorの構築
@@ -155,7 +155,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         leader_online_mask = input_dict.get('leader_online_mask', None)
         follower_online_mask = input_dict.get('follower_online_mask', None)
         
-        if self.off_policy_critic:
+        if self.off_policy_ceb:
             critic_mask = torch.logical_or(torch.logical_or(leader_online_mask, follower_online_mask), off_policy_mask) # offpolicyデータも使用
         else:
             critic_mask = torch.logical_or(leader_online_mask, follower_online_mask) # onlineデータのみ使用
@@ -224,10 +224,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             
             # オンラインデータでのみ学習するようにマスクを適用した後、正規化する
             if self.sapg2:
-                if self.vanilla_sapg:
-                    b_mask = torch.logical_or(critic_mask, off_policy_mask)
-                else:
-                    b_mask = critic_mask
+                b_mask = critic_mask #criticと同じmaskをかける
                 assert b_loss.shape == b_mask.shape, "b_loss shape: {}, b_mask shape: {}".format(b_loss.shape, b_mask.shape)
                 b_loss = b_loss * b_mask
                 
@@ -239,10 +236,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 
             # エントロピーについてもマスクを適用してから、正規化する
             if self.sapg2:
-                if self.vanilla_sapg:
-                    entropy_mask = torch.logical_or(critic_mask, off_policy_mask)   
-                else:
-                    entropy_mask = critic_mask
+                entropy_mask = critic_mask #criticと同じmaskをかける
                 assert entropy.shape == entropy_mask.shape, "entropy shape: {}, entropy_mask shape: {}".format(entropy.shape, entropy_mask.shape)
                 entropy = entropy * entropy_mask
             
@@ -269,7 +263,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 grads_off = self.get_grads(off_policy_loss)
                 grads_on = self.get_grads(on_policy_loss)
 
-
+            
             losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss , (entropy_coef*entropy).unsqueeze(1), b_loss.unsqueeze(1)], rnn_masks)
             a_loss, c_loss, entropy_loss, b_loss = losses[0], losses[1], losses[2], losses[3]
 
