@@ -1112,6 +1112,9 @@ class A2CBase(BaseAlgorithm):
                     mask = filter_leader(mask, len(val), repeat_idxs, num_blocks)
                 new_batch_dict[key] = obses
                 new_batch_dict['off_policy_mask'] = mask # 5600中800(オリジナルじゃない分)がTrue
+                print("obses.shape", obses.shape)
+                print("mask.shape", mask.shape)
+                print("mask.sum()", mask.sum())
                     
 
             elif key in ['values', 'returns']:
@@ -1239,17 +1242,34 @@ class A2CBase(BaseAlgorithm):
                 
                 mask = torch.zeros(len(obses), dtype=torch.bool, device=obses.device)
                 mask[2*len(val):] = True # maskはオフライン分だけTrue. (800))
+            
+                
                 if self.use_others_experience == 'lf': # leader follower type update
                     # 使うデータに関するマスク
                     required_mask = torch.logical_or(awac_mask, follower_online_mask)
                     required_mask = torch.logical_or(required_mask, leader_online_mask)
                     required_mask = torch.logical_or(required_mask, mask)
+                    print("required_mask.sum()", required_mask.sum())
                     
                     obses = filter_leader(obses, len(val), repeat_idxs, num_blocks, required_mask)
                     mask = filter_leader(mask, len(val), repeat_idxs, num_blocks, required_mask)
                     awac_mask = filter_leader(awac_mask, len(val), repeat_idxs, num_blocks, required_mask)
                     follower_online_mask = filter_leader(follower_online_mask, len(val), repeat_idxs, num_blocks, required_mask)
                     leader_online_mask = filter_leader(leader_online_mask, len(val), repeat_idxs, num_blocks, required_mask)
+                
+                """
+                # デバッグ用
+                print("Filter Leader後のデータ数")
+                print("obses.shape", obses.shape)
+                print("mask.shape", mask.shape)
+                print("mask.sum()", mask.sum())
+                print("awac_mask.shape", awac_mask.shape)
+                print("awac_mask.sum()", awac_mask.sum())
+                print("follower_online_mask.shape", follower_online_mask.shape)
+                print("follower_online_mask.sum()", follower_online_mask.sum())
+                print("leader_online_mask.shape", leader_online_mask.shape)
+                print("leader_online_mask.sum()", leader_online_mask.sum())
+                """
                     
                 new_batch_dict[key] = obses
                 new_batch_dict['off_policy_mask'] = mask # 10400中800(オリジナルじゃない分)がTrue
@@ -1727,6 +1747,7 @@ class ContinuousA2CBase(A2CBase):
         self.curr_frames = batch_dict.pop('played_frames')
         self.prepare_dataset(batch_dict)
         
+        
         ret_val = self.algo_observer.after_steps()
         if isinstance(ret_val, DictConfig):
             return ret_val
@@ -1887,6 +1908,15 @@ class ContinuousA2CBase(A2CBase):
             dataset_dict['dones'] = dones
             dataset_dict['rnn_masks'] = rnn_masks
             self.central_value_net.update_dataset(dataset_dict)
+        """
+        print("---")
+        print(dataset_dict["actions"].shape)
+        print(dataset_dict["off_policy_mask"].sum())
+        print(dataset_dict["awac_mask"].sum())
+        print(dataset_dict["leader_online_mask"].sum())
+        print(dataset_dict["follower_online_mask"].sum())
+        """
+        
 
     def train(self):
         self.init_tensors()
