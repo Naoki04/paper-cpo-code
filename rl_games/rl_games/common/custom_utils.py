@@ -103,7 +103,7 @@ def filter_leader(val, orig_len, repeat_idxs, num_blocks, required_mask):
         filtered_val = []
         for i, idx in enumerate(repeat_idxs):
             if idx == 0:
-                filtered_val.append(val[:, i*orig_len:(i+1)*orig_len][required_mask[i*orig_len:(i+1)*orig_len]]) # [0:4800]を取り出す(オリジナル全て), required_maskはAWAC用に拡張してできたリーダーデータのリーダー埋め込みを除外するため
+                filtered_val.append(val[:, i*orig_len:(i+1)*orig_len][:,required_mask[i*orig_len:(i+1)*orig_len]]) # [0:4800]を取り出す(オリジナル全て), required_maskはAWAC用に拡張してできたリーダーデータのリーダー埋め込みを除外するため
             else:
                 filtered_val.append(val[:, i*orig_len + (idx-1)*bsize:i*orig_len + idx*bsize])
         new_val = torch.cat(filtered_val, dim=1)
