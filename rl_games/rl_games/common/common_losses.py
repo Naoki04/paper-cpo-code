@@ -135,7 +135,7 @@ def actor_loss_with_awac(old_action_neglog_probs_batch, action_neglog_probs, lea
         ratio = torch.exp(old_action_neglog_probs_batch - action_neglog_probs)
         surr1 = advantage * ratio
         surr2 = advantage * torch.clamp(ratio, 1.0 - curr_e_clip, 1.0 + curr_e_clip)
-        ppo_loss = torch.max(-surr1, -surr2)
+        ppo_loss = torch.max(-surr1, -surr2) # マイナスのmaxを取ることで、最小化問題に変換
         # awac maskでマスキングする
     else:
         ppo_loss = (action_neglog_probs * advantage)
@@ -148,7 +148,7 @@ def actor_loss_with_awac(old_action_neglog_probs_batch, action_neglog_probs, lea
     # 2. awac_mask(フォロワーのオフライン学習)のデータはAWACで学習する。
     """
     # AWACロスの計算(expが爆発するのでadvantageをクリップする)
-    offline_awac_loss = - awac_lambda * torch.clamp(torch.exp(advantage / awac_lambda), max=awac_max)*(-action_neglog_probs)
+    offline_awac_loss = - awac_lambda * torch.clamp(torch.exp(advantage / awac_lambda), max=awac_max)*(-action_neglog_probs) # 先頭のマイナスで、最小化問題に変換
     offline_awac_loss = offline_awac_loss * awac_mask 
     
     
@@ -156,10 +156,11 @@ def actor_loss_with_awac(old_action_neglog_probs_batch, action_neglog_probs, lea
     # 3. follower_online_mask(フォロワーのオンライン学習)のデータは、KL拘束付きのPPOで学習する。
     """
     ratio = torch.exp(old_action_neglog_probs_batch - action_neglog_probs)
-    surr1 = (-(leader_action_log_probs - action_neglog_probs)*awac_lambda + advantage) *ratio 
-    surr2 = (-(leader_action_log_probs - action_neglog_probs)*awac_lambda + advantage) * torch.clamp(ratio, 1.0 - curr_e_clip, 1.0 + curr_e_clip)
-    online_awac_loss = torch.max(-surr1, -surr2)
+    surr1 = (-(leader_action_log_probs - action_neglog_probs)*awac_lambda + advantage) *ratio # これは最大化したい値
+    surr2 = (-(leader_action_log_probs - action_neglog_probs)*awac_lambda + advantage) * torch.clamp(ratio, 1.0 - curr_e_clip, 1.0 + curr_e_clip) # これは最大化したい値
+    online_awac_loss = torch.max(-surr1, -surr2) # マイナスのmaxを取ることで、最小化問題に変換
     online_awac_loss = online_awac_loss * follower_online_mask
+    
     
     """
     # 4. 各ロスのバランスを取って、最終的なロスを計算する。

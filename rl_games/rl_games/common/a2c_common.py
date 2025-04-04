@@ -1826,7 +1826,6 @@ class ContinuousA2CBase(A2CBase):
         self.curr_frames = batch_dict.pop('played_frames')
         self.prepare_dataset(batch_dict)
         
-        
         ret_val = self.algo_observer.after_steps()
         if isinstance(ret_val, DictConfig):
             return ret_val
@@ -1940,8 +1939,8 @@ class ContinuousA2CBase(A2CBase):
                 self.value_mean_std.train()
                 
             values = self.value_mean_std(values)
-            print("self.running_mean:", self.value_mean_std.running_mean)
-            print("self.running_var:", self.value_mean_std.running_var)
+            #print("self.running_mean:", self.value_mean_std.running_mean)
+            #print("self.running_var:", self.value_mean_std.running_var)
             
             if self.is_double_critic: # val1,2はvalと同じように正規化する
                 self.value_mean_std.eval()

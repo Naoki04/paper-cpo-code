@@ -158,7 +158,17 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         if self.is_double_critic:
             value_preds_batch1 = input_dict["old_values1"]
             value_preds_batch2 = input_dict["old_values2"]
-            
+        """
+        print("Debug----")
+        print("off_policy_mask.shape:", off_policy_mask.shape)
+        print("off_policy_mask.sum():", off_policy_mask.sum())
+        print("awac_mask.shape:", awac_mask.shape)
+        print("awac_mask.sum():", awac_mask.sum())
+        print("leader_online_mask.shape:", leader_online_mask.shape)
+        print("leader_online_mask.sum():", leader_online_mask.sum())
+        print("follower_online_mask.shape:", follower_online_mask.shape)
+        print("follower_online_mask.sum():", follower_online_mask.sum())
+        """
         
         if self.off_policy_ceb:
             critic_mask = torch.logical_or(torch.logical_or(leader_online_mask, follower_online_mask), off_policy_mask) # offpolicyデータも使用
@@ -238,7 +248,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 b_mask = critic_mask #criticと同じmaskをかける
                 assert b_loss.shape == b_mask.shape, "b_loss shape: {}, b_mask shape: {}".format(b_loss.shape, b_mask.shape)
                 b_loss = b_loss * b_mask
-                
                 if self.enable_w:
                     w = b_mask.sum() / b_mask.numel()
                     b_loss = b_loss / w.detach()            
@@ -250,12 +259,9 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 entropy_mask = critic_mask #criticと同じmaskをかける
                 assert entropy.shape == entropy_mask.shape, "entropy shape: {}, entropy_mask shape: {}".format(entropy.shape, entropy_mask.shape)
                 entropy = entropy * entropy_mask
-            
                 if self.enable_w:
                     w = entropy_mask.sum() / entropy_mask.numel()
                     entropy = entropy / w.detach()
-                    
-            
             
             if self.expl_type.startswith('mixed_expl') and self.config.get('expl_reward_type') == 'entropy':
                 ec_candidates = self.intr_reward_coef[::self.intr_coef_block_size]
@@ -277,6 +283,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             
             losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss , (entropy_coef*entropy).unsqueeze(1), b_loss.unsqueeze(1)], rnn_masks)
             a_loss, c_loss, entropy_loss, b_loss = losses[0], losses[1], losses[2], losses[3]
+
 
             loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy_loss + b_loss * self.bounds_loss_coef
             """
