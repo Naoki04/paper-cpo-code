@@ -1249,21 +1249,23 @@ class A2CBase(BaseAlgorithm):
         sorted_keys = ['obses'] + [k for k in batch_dict.keys() if k != 'obses']
         ordered_batch_dict = OrderedDict((k, batch_dict[k]) for k in sorted_keys)
         
+        print("00===DEBUG00000|======")
+
         #for key, val in batch_dict.items():
         for key, val in ordered_batch_dict.items():
             if key in ['played_frames', 'step_time']:
                 new_batch_dict[key] = val
             elif key == 'obses':
-                # obsの末尾にself.intr_reward_coef_embdを追加する操作。オリジナル分以外は0にすることで、offline化する。
+                # obsの末尾に追加するembeddingを取得。例えば[50, 40, 30, 20, 10, 0]を2回繰り返したあと[20,10,0,50,40](rolled), rolledも部分はfilter_leader()で0のデータだけ残す。
                 intr_coef_embd = torch.cat([torch.roll(self.intr_reward_coef_embd, self.intr_coef_block_size*i, dims=0) for i in repeat_idxs], dim=0)
-                # obsesも2回分繰り返す
+                # obsesも3回分繰り返す
                 obses = torch.cat([val]*len(repeat_idxs), dim=0) 
-                # 後半分のobsの埋め込みをずらして書き換える(後でfilterでリーダー分だけ残す)
+                # 後半分のobsをstep分繰り返して例えば[50, 50, ..., 20, ..., 10, ..., 0]を2回繰り返したあと[20, 20, ..., 10, ....., 0, ..., 50, ..., 40, .. 40](rolled)の形にし、obsesの埋め込みを書き換え。
                 obses[:, -self.intr_reward_coef_embd.shape[-1]:] = intr_coef_embd.repeat_interleave(self.horizon_length, dim=0) 
                 
-                
                 ### SAPG2 ###
-                # フォロワーのオリジナルデータをリーダーデータで書き換える。埋め込みはそのまま 
+                # AWAC用に、2周目のフォロワーのデータをリーダーのデータで書き換える。埋め込みはフォロワーのまま 
+                #(左: AWACデータの最初~リーダーに入る手前までの埋め込み以外のobs), (右: AWAC部分のリーダーデータの最初から最後まで、埋め込み以外のobs x フォロワーの数だけリピート)
                 obses[len(val):2*len(val)-self.intr_coef_block_size*self.horizon_length, :-1] = obses[2*len(val)-self.intr_coef_block_size*self.horizon_length:2*len(val), :-1].repeat(int(len(val)/self.intr_coef_block_size/self.horizon_length-1),1)
                 
                 # リーダーデータをフォロワー埋め込みに書き換えたデータを管理するマスク
@@ -1318,23 +1320,18 @@ class A2CBase(BaseAlgorithm):
                 pass  # handled below
             elif key == 'rnn_states':
                 if val is not None:
-                    # valはリストで、[tensorA[1,300,768], tensorB[1,300,768]]のようになっている。
-                    # この*lenとcatにより、new_batch = [tensorA[1,300,768]を2つ並べた[1,600,768], tensorB[1,300,768]を2つ並べた[1,600,768]]になる。
+                    # valはリストで、[tensorA[1,300,768], tensorB[1,300,768]]のようになっている。768は次元数(最後のステップのみ)。
+                    # この*lenとcatにより、データがlen(repeat_idxs)倍になる。
                     new_batch_dict[key] = [torch.cat([val[i]]*len(repeat_idxs), dim=1) for i in range(len(val))]
+                    print(new_batch_dict[key][0].shape) # [1, 900, 768]
+                    print(new_batch_dict[key][1].shape) # [1, 900, 768]
                     
                     ### SAPG2 ###
-                    # よって、tensorA, Bそれぞれについて0~250, 300~550の部分をリーダーデータで書き換える。
-                    # 前半のフォロワーデータをリーダーデータで書き換える
-                    #print(val[0].shape[1]-self.intr_coef_block_size) # 250
-                    #print(val[0].shape[1]) # 300
-                    #print(2*val[0].shape[1]-self.intr_coef_block_size) # 550
+                    # AWAC対応のため、tensorA, Bそれぞれについて２周目のフォロワーデータ=[:,300:550,:]の部分をリーダーデータ[:, 550:600,:]を5倍繰り返したものに書き換える。
                     # tensorAの部分
                     new_batch_dict[key][0][:,val[0].shape[1]:2*val[0].shape[1]-self.intr_coef_block_size] = new_batch_dict[key][0][:,2*val[0].shape[1]-self.intr_coef_block_size:2*val[0].shape[1]].repeat(1,int(val[0].shape[1]/self.intr_coef_block_size-1),1)
-                    new_batch_dict[key][0][:,2*val[0].shape[1]:3*val[0].shape[1]-self.intr_coef_block_size] = new_batch_dict[key][0][:,3*val[0].shape[1]-self.intr_coef_block_size:].repeat(1,int(val[0].shape[1]/self.intr_coef_block_size-1),1)
                     # tensorBの部分
                     new_batch_dict[key][1][:,val[0].shape[1]:2*val[0].shape[1]-self.intr_coef_block_size] = new_batch_dict[key][1][:,2*val[1].shape[1]-self.intr_coef_block_size:2*val[1].shape[1]].repeat(1,int(val[1].shape[1]/self.intr_coef_block_size-1),1)
-                    new_batch_dict[key][1][:,2*val[0].shape[1]:3*val[0].shape[1]-self.intr_coef_block_size] = new_batch_dict[key][1][:,3*val[1].shape[1]-self.intr_coef_block_size:].repeat(1,int(val[1].shape[1]/self.intr_coef_block_size-1),1)
-                    
                     
                     if self.use_others_experience == 'lf':
                         new_batch_dict[key] = [filter_leader(new_batch_dict[key][i], val[i].shape[1], repeat_idxs, num_blocks, required_mask) for i in range(len(val))]
