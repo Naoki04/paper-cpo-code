@@ -317,11 +317,30 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         #TODO: Refactor this ugliest code of they year
         all_grads = self.trancate_gradients_and_step()
 
+        """
+        Adaptive SchedulerのためのKL距離を計算する。
+        - rnn_maskが存在する場合はrnn_maskのデータのみを使って計算
+        - no_awacの場合は、awacのデータを除外して計算
+        """
         with torch.no_grad():
-            reduce_kl = rnn_masks is None
+            reduce_kl = False #rnn_masks is None
             kl_dist = torch_ext.policy_kl(mu.detach(), sigma.detach(), old_mu_batch, old_sigma_batch, reduce_kl)
-            if rnn_masks is not None:
-                kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.numel()  #/ sum_mask
+            if rnn_masks is not None and self.scheduler_kl_data=="no_awac": # rnn_maskかつawac以外のデータでklを計算する場合
+                scheduler_mask = torch.logical_or(leader_online_mask, follower_online_mask)
+                scheduler_mask = torch.logical_or(scheduler_mask, off_policy_mask)
+                scheduler_mask = torch.logical_or(scheduler_mask, rnn_masks)
+            elif rnn_masks is not None and self.scheduler_kl_data=="all": # rnn_maskのデータでklを計算する場合
+                scheduler_mask = rnn_masks
+            elif rnn_masks is None and self.scheduler_kl_data == "no_awac": # rnn_maskが存在せず, awac以外のデータでklを計算する場合
+                scheduler_mask = torch.logical_or(leader_online_mask, follower_online_mask)
+                scheduler_mask = torch.logical_or(scheduler_mask, off_policy_mask)
+            elif rnn_masks is None and self.scheduler_kl_data == "all": # 全てのデータでklを計算する場合
+                scheduler_mask = torch.ones_like(leader_online_mask) 
+            else:
+                NotImplementedError("scheduler_kl_data: {self.scheduler_kl_data} is not valid.")
+                
+            kl_dist = (kl_dist * scheduler_mask).sum() / scheduler_mask.numel()  #/ sum_mask
+                
 
         self.diagnostics.mini_batch(self,
         {

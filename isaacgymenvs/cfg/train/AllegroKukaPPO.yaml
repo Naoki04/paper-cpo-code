@@ -60,6 +60,7 @@ params:
     save_batch: True # モデルと一緒にbatchを保存する。
     off_policy_ceb: False # オフポリシーデータをcritic, bound, entropy lossの計算に使う
     double_critic: ${..network.double_critic} # 二つのcriticのmin(v1,v2)を取る
+    scheduler_kl_data: no_awac # ["no_awac","all"] AdaptiveSchedulerのためのKL計算にAWACのデータを使うかどうか。
 
     # 敵対的報酬の設定
     use_ad_reward: True

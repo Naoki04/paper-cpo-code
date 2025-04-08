@@ -291,6 +291,7 @@ class A2CBase(BaseAlgorithm):
         self.enable_w = self.config.get('enable_w', False)
         self.save_batch = self.config.get('save_batch', False)
         self.is_double_critic = self.config.get('double_critic', False)
+        self.scheduler_kl_data = self.config.get('scheduler_kl_data', False)
         
         
         # アクターロス関数の選択
