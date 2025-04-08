@@ -1323,8 +1323,6 @@ class A2CBase(BaseAlgorithm):
                     # valはリストで、[tensorA[1,300,768], tensorB[1,300,768]]のようになっている。768は次元数(最後のステップのみ)。
                     # この*lenとcatにより、データがlen(repeat_idxs)倍になる。
                     new_batch_dict[key] = [torch.cat([val[i]]*len(repeat_idxs), dim=1) for i in range(len(val))]
-                    print(new_batch_dict[key][0].shape) # [1, 900, 768]
-                    print(new_batch_dict[key][1].shape) # [1, 900, 768]
                     
                     ### SAPG2 ###
                     # AWAC対応のため、tensorA, Bそれぞれについて２周目のフォロワーデータ=[:,300:550,:]の部分をリーダーデータ[:, 550:600,:]を5倍繰り返したものに書き換える。
@@ -1338,27 +1336,29 @@ class A2CBase(BaseAlgorithm):
                 else:
                     new_batch_dict[key] = None
             else:
+                # データを3倍(SAPGと同じ)
                 new_batch_dict[key] = torch.cat([val]*len(repeat_idxs), dim=0)
                 ### SAPG2 ###
                 # 前半のフォロワーデータをリーダーデータで書き換える
-                if len(val.shape) > 1: # 各行が次元を持っている場合
+
+                if len(val.shape) > 1: # 各行が次元を持っている場合[4800, 23](actions, mus, sigmas)
                     new_batch_dict[key][len(val):2*len(val)-self.intr_coef_block_size*self.horizon_length] = new_batch_dict[key][2*len(val)-self.intr_coef_block_size*self.horizon_length:2*len(val)].repeat(int(len(val)/self.intr_coef_block_size/self.horizon_length-1), 1)
-                else: # 各行がスカラーの場合は[800]をrepeat(5,1)すると[5,800]になるので、[4000]にするためにview(-1).squeeze(0)する
-                    new_batch_dict[key][len(val):2*len(val)-self.intr_coef_block_size*self.horizon_length] = new_batch_dict[key][2*len(val)-self.intr_coef_block_size*self.horizon_length:2*len(val)].repeat(int(len(val)/self.intr_coef_block_size/self.horizon_length-1), 1).view(-1).squeeze(0)    
-                
+                else: # 各行がスカラーの場合([4800], (neglogacs, dones))は[800]をrepeat(5,1)すると[5,800]になるので、[4000]にするためにview(-1)する
+                    new_batch_dict[key][len(val):2*len(val)-self.intr_coef_block_size*self.horizon_length] = new_batch_dict[key][2*len(val)-self.intr_coef_block_size*self.horizon_length:2*len(val)].repeat(int(len(val)/self.intr_coef_block_size/self.horizon_length-1), 1).view(-1)   
+                    
                 if self.use_others_experience == 'lf': # leader follower type update
                     new_batch_dict[key] = filter_leader(new_batch_dict[key], len(val), repeat_idxs, num_blocks, required_mask)
 
-        
-        
-        # new_batch_dictには1.リーダーデータ(フォロワー埋め込み)4000、2.リーダーデータリーダー埋め込み(800)、3.フォロワーデータリーダー埋め込み(800)が入っており、1と3はreturnとvalueの再計算が必要。
+
+        # new_batch_dictには1.オリジナルデータ(4800), 2.リーダーデータのフォロワー埋め込み(4000+800のリーダー埋め込みはあとで削除される), 3.フォロワーデータのリーダー埋め込み(4800(うち4000は後で削除される))が入っており。2,3はvalueとreturnの再計算が必要。
         # # フォロワーデータに関しては、リーダーデータに書き換えて、価値とリターンを再計算する。リーダーのオンラインデータはそのまま。
         # クリティック学習用のオリジナルデータは更新しないので、そのまま入れておく。
         
-        new_values_list = [batch_dict['values']]
+        new_values_list = [batch_dict['values']] # オリジナル分はそのまま
         if self.is_double_critic:
             new_values1_list = [batch_dict['values1']]
             new_values2_list = [batch_dict['values2']]
+            
         # 敵対的報酬を使う場合、オリジナルデータは敵対的報酬を含んだreturnを使う。オフライン学習用のデータには敵対的報酬を含めないreturnを使う。
         if self.use_ad_reward: 
             new_returns_list = [batch_dict['returns_with_ad_rew']]
@@ -1367,7 +1367,7 @@ class A2CBase(BaseAlgorithm):
         
         
         # 繰り返し分はもとのコードで処理する。
-        for r_k in repeat_idxs[1:]: # クリティック用のデータ(1個目)はスキップ、2個目のリーダーオンラインデータ以外, 3個目のデータに適用
+        for r_k in repeat_idxs[1:]: # オリジナルデータ(1周目)はスキップして、AWACデータとoff_policyデータ(フォロワーのリーダ埋め込み)に対して処理を行う。
             mb_rewards = extras['rewards'] # torch.Size([16, 300, 1])
             mb_obs = extras['obs'] # torch.Size([16, 300, 100])
             last_obs_and_states = extras['last_obs'] # dict_keys(['obs', 'states']), ['obs']=torch.Size([300, 100]), ['states']=torch.Size([300, 99])
@@ -1375,22 +1375,25 @@ class A2CBase(BaseAlgorithm):
             mb_states = extras['states'] # Nonetype
             mb_rnn_states = extras['rnn_states'] # 2, torch.Size([16, 1, 300, 768]) torch.Size([16, 1, 300, 768])
             
-            if r_k == 0: # 初めのデータについてはフォロワーデータをリーダーデータでおきかえて処理する。(埋め込みはそのまま)
-                mb_rewards[:, :mb_rewards.shape[1]-self.intr_coef_block_size,:] = mb_rewards[:,mb_rewards.shape[1]-self.intr_coef_block_size:].repeat(1, int(mb_rewards.shape[1]/self.intr_coef_block_size-1), 1)
-                mb_obs[:, :mb_obs.shape[1]-self.intr_coef_block_size,:-1] = mb_obs[:, mb_obs.shape[1]-self.intr_coef_block_size:, :-1].repeat(1, int(mb_obs.shape[1]/self.intr_coef_block_size-1), 1)
-                last_obs_and_states["obs"][:last_obs_and_states["obs"].shape[0]-self.intr_coef_block_size,:-1] = last_obs_and_states["obs"][last_obs_and_states["obs"].shape[0]-self.intr_coef_block_size:, :-1].repeat(int(last_obs_and_states["obs"].shape[0]/self.intr_coef_block_size-1), 1)
+            if r_k == 0: # AWACデータについては、obsの埋め込み以外をリーダーデータで置き換えてから再計算する。
+                """
+                リーダーデータへの置き換え(AWAC)
+                """
+                mb_rewards[:, :-self.intr_coef_block_size,:] = mb_rewards[:,-self.intr_coef_block_size:,:].repeat(1, int(mb_rewards.shape[1]/self.intr_coef_block_size-1), 1)
+                mb_obs[:, :-self.intr_coef_block_size,:-1] = mb_obs[:, -self.intr_coef_block_size:, :-1].repeat(1, int(mb_obs.shape[1]/self.intr_coef_block_size-1), 1)
+                last_obs_and_states["obs"][:-self.intr_coef_block_size,:-1] = last_obs_and_states["obs"][-self.intr_coef_block_size:, :-1].repeat(int(last_obs_and_states["obs"].shape[0]/self.intr_coef_block_size-1), 1)
                 if "states" in last_obs_and_states.keys():
-                    last_obs_and_states["states"][:last_obs_and_states["states"].shape[0]-self.intr_coef_block_size] = last_obs_and_states["states"][last_obs_and_states["states"].shape[0]-self.intr_coef_block_size:].repeat(int(last_obs_and_states["states"].shape[0]/self.intr_coef_block_size-1), 1)
+                    last_obs_and_states["states"][:-self.intr_coef_block_size] = last_obs_and_states["states"][-self.intr_coef_block_size:].repeat(int(last_obs_and_states["states"].shape[0]/self.intr_coef_block_size-1), 1)
                 if last_rnn_states is not None:
-                    last_rnn_states[0][:,:last_rnn_states[0].shape[1]-self.intr_coef_block_size] = last_rnn_states[0][:,last_rnn_states[0].shape[1]-self.intr_coef_block_size:].repeat(1, int(last_rnn_states[0].shape[1]/self.intr_coef_block_size-1), 1)
-                    last_rnn_states[1][:,:last_rnn_states[1].shape[1]-self.intr_coef_block_size] = last_rnn_states[1][:,last_rnn_states[1].shape[1]-self.intr_coef_block_size:].repeat(1, int(last_rnn_states[1].shape[1]/self.intr_coef_block_size-1), 1)
+                    assert len(last_rnn_states) == 2, f"last_rnn_statesの長さが2ではない場合があった。実際は{last_rnn_states}"
+                    last_rnn_states[0][:,:-self.intr_coef_block_size] = last_rnn_states[0][:,-self.intr_coef_block_size:].repeat(1, int(last_rnn_states[0].shape[1]/self.intr_coef_block_size-1), 1)
+                    last_rnn_states[1][:,:-self.intr_coef_block_size] = last_rnn_states[1][:,-self.intr_coef_block_size:].repeat(1, int(last_rnn_states[1].shape[1]/self.intr_coef_block_size-1), 1)
                 # mb_statesがnoneでない場合はassertion
                 assert mb_states is None, f"mb_states is None, but {type(mb_states), mb_states}"
                 if mb_rnn_states is not None:
-                    mb_rnn_states[0][:,:,:mb_rnn_states[0].shape[2]-self.intr_coef_block_size] = mb_rnn_states[0][:,:,mb_rnn_states[0].shape[2]-self.intr_coef_block_size:].repeat(1,1, int(mb_rnn_states[0].shape[2]/self.intr_coef_block_size-1), 1)
-                    mb_rnn_states[1][:,:,:mb_rnn_states[1].shape[2]-self.intr_coef_block_size] = mb_rnn_states[1][:,:,mb_rnn_states[1].shape[2]-self.intr_coef_block_size:].repeat(1,1, int(mb_rnn_states[1].shape[2]/self.intr_coef_block_size-1), 1)
+                    mb_rnn_states[0][:,:,:-self.intr_coef_block_size] = mb_rnn_states[0][:,:,-self.intr_coef_block_size:].repeat(1,1, int(mb_rnn_states[0].shape[2]/self.intr_coef_block_size-1), 1)
+                    mb_rnn_states[1][:,:,:-self.intr_coef_block_size] = mb_rnn_states[1][:,:,-self.intr_coef_block_size:].repeat(1,1, int(mb_rnn_states[1].shape[2]/self.intr_coef_block_size-1), 1)
                     
-                
                 
             else: # リーダーのオフライン学習データについてはこれまで同様の処理をする。
                 # extraのobsについてもここで埋め込みを書き換える
@@ -1416,9 +1419,10 @@ class A2CBase(BaseAlgorithm):
             
             mb_fdones = extras['dones'] # torch.Size([16, 300])
             fdones = extras['last_dones'] # torch.Size([300])
-            if r_k == 0:
-                mb_fdones[:, :mb_fdones.shape[1]-self.intr_coef_block_size] = mb_fdones[:, mb_fdones.shape[1]-self.intr_coef_block_size:].repeat(1, int(mb_fdones.shape[1]/self.intr_coef_block_size-1))
-                fdones[:fdones.shape[0]-self.intr_coef_block_size] = fdones[fdones.shape[0]-self.intr_coef_block_size:].repeat(int(fdones.shape[0]/self.intr_coef_block_size-1), 1).view(-1).squeeze(0)
+            
+            if r_k == 0: # AWACデータについては、obsの埋め込み以外をリーダーデータで置き換えてから再計算する。
+                mb_fdones[:, :-self.intr_coef_block_size] = mb_fdones[:, -self.intr_coef_block_size:].repeat(1, int(mb_fdones.shape[1]/self.intr_coef_block_size-1))
+                fdones[:-self.intr_coef_block_size] = fdones[-self.intr_coef_block_size:].repeat(int(fdones.shape[0]/self.intr_coef_block_size-1), 1).view(-1).squeeze(0)
                 
 
             mb_fdones = torch.cat([mb_fdones, fdones.unsqueeze(0)], dim=0)
@@ -1453,15 +1457,6 @@ class A2CBase(BaseAlgorithm):
                 mb_values2 = torch.cat([mb_values2, last_values2.unsqueeze(0)], dim=0)
                 new_values2_list.append(swap_and_flatten01(mb_values2[:-1]))
                 
-            
-            
-            # リーダーのオンライン学習については、オリジナルデータに差し替える。
-            if r_k == 0:
-                new_returns_list[0][len(batch_dict['returns'])-self.intr_coef_block_size*self.horizon_length:] = batch_dict['returns'][len(batch_dict['returns'])-self.intr_coef_block_size*self.horizon_length:]
-                new_values_list[0][len(batch_dict['values'])-self.intr_coef_block_size*self.horizon_length:] = batch_dict['values'][len(batch_dict['values'])-self.intr_coef_block_size*self.horizon_length:]
-                if self.is_double_critic:
-                    new_values1_list[0][len(batch_dict['values1'])-self.intr_coef_block_size*self.horizon_length:] = batch_dict['values1'][len(batch_dict['values1'])-self.intr_coef_block_size*self.horizon_length:]
-                    new_values2_list[0][len(batch_dict['values2'])-self.intr_coef_block_size*self.horizon_length:] = batch_dict['values2'][len(batch_dict['values2'])-self.intr_coef_block_size*self.horizon_length:]
                 
         new_batch_dict['returns'] = torch.cat(new_returns_list, dim=0)
         new_batch_dict['values'] = torch.cat(new_values_list, dim=0)
