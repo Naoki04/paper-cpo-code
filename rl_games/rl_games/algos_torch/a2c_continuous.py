@@ -205,16 +205,26 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 values1 = res_dict['values1']
                 values2 = res_dict['values2']
             
-            # 現在のリーダーでの行動確率を計算
-            leader_batch_dict = batch_dict.copy()
-            leader_batch_dict['obs'][:,-1] = 0
-            leader_res_dict = self.model(leader_batch_dict)
-            leader_action_log_probs = leader_res_dict['prev_neglogp']
-            #print("leader_action_log_probs: ", leader_action_log_probs.shape)
+            """
+            # 現在のリーダーでの行動確率を計算(KL-PPO用)、フォロワー更新に使うのでno_gradで計算する。
+            """
+            # まず、embdをリーダー(0)にして、行動確率を計算
+            with torch.no_grad():
+                leader_batch_dict = batch_dict.copy()
+                leader_batch_dict['obs'][:,-self.intr_reward_coef_embd.shape[-1]:] = 0
+                # 推論
+                leader_res_dict = self.model(leader_batch_dict)
+                leader_action_log_probs = leader_res_dict['prev_neglogp']
+            
 
             # アクターのロスを計算する部分(普通のPPOロス)
             if self.sapg2:
                 a_loss, a_loss_info = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, leader_action_log_probs, advantage, self.ppo, curr_e_clip, off_policy_mask, awac_mask, leader_online_mask, follower_online_mask, self.awac_lambda, self.awac_max, self.awac_alpha, self.awac_beta, self.awac_gamma, critic_mask, self.enable_w)
+                """
+                old_action_log_probs_batch: データを収集した方策の行動確率
+                action_log_probs: 現在の方策の行動確率(新しい埋め込み、つまりleader_onlineはleader, follower_onlineはfollower, awacはfollower, off_policyはleader)
+                leader_action_log_probs: 現在のリーダーの行動確率
+                """
             else:
                 a_loss = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip, off_policy_mask)
             
