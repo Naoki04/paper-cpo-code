@@ -1250,7 +1250,6 @@ class A2CBase(BaseAlgorithm):
         sorted_keys = ['obses'] + [k for k in batch_dict.keys() if k != 'obses']
         ordered_batch_dict = OrderedDict((k, batch_dict[k]) for k in sorted_keys)
         
-        print("00===DEBUG00000|======")
 
         #for key, val in batch_dict.items():
         for key, val in ordered_batch_dict.items():

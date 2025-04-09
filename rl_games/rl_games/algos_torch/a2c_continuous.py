@@ -261,7 +261,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 if self.enable_w:
                     w = b_mask.sum() / b_mask.numel()
                     b_loss = b_loss / w.detach()            
-                    
                 
                 
             # エントロピーについてもマスクを適用してから、正規化する
@@ -339,7 +338,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             else:
                 NotImplementedError("scheduler_kl_data: {self.scheduler_kl_data} is not valid.")
                 
-            kl_dist = (kl_dist * scheduler_mask).sum() / scheduler_mask.numel()  #/ sum_mask
+            kl_dist = (kl_dist * scheduler_mask).sum() / scheduler_mask.numel()  # 使ってるデータについて平均を取る
                 
 
         self.diagnostics.mini_batch(self,
