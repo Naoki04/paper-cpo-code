@@ -327,7 +327,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             if rnn_masks is not None and self.scheduler_kl_data=="no_awac": # rnn_maskかつawac以外のデータでklを計算する場合
                 scheduler_mask = torch.logical_or(leader_online_mask, follower_online_mask)
                 scheduler_mask = torch.logical_or(scheduler_mask, off_policy_mask)
-                scheduler_mask = torch.logical_or(scheduler_mask, rnn_masks)
+                scheduler_mask = torch.logical_and(scheduler_mask, rnn_masks)
             elif rnn_masks is not None and self.scheduler_kl_data=="all": # rnn_maskのデータでklを計算する場合
                 scheduler_mask = rnn_masks
             elif rnn_masks is None and self.scheduler_kl_data == "no_awac": # rnn_maskが存在せず, awac以外のデータでklを計算する場合
