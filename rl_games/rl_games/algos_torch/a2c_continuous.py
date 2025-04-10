@@ -289,7 +289,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 grads_off = self.get_grads(off_policy_loss)
                 grads_on = self.get_grads(on_policy_loss)
 
-            
+            # rnn_maskを適用して平均計算
             losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss , (entropy_coef*entropy).unsqueeze(1), b_loss.unsqueeze(1)], rnn_masks)
             a_loss, c_loss, entropy_loss, b_loss = losses[0], losses[1], losses[2], losses[3]
 
@@ -337,8 +337,9 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 scheduler_mask = torch.ones_like(leader_online_mask) 
             else:
                 NotImplementedError("scheduler_kl_data: {self.scheduler_kl_data} is not valid.")
-                
-            kl_dist = (kl_dist * scheduler_mask).sum() / scheduler_mask.numel()  # 使ってるデータについて平均を取る
+            
+            
+            kl_dist = (kl_dist * scheduler_mask).sum() / scheduler_mask.sum()  # 使ってるデータについて平均を取る
                 
 
         self.diagnostics.mini_batch(self,
