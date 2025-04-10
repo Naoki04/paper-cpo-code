@@ -165,18 +165,18 @@ def actor_loss_with_awac(old_action_neglog_probs_batch, action_neglog_probs, lea
     """
     # 4. 各ロスのバランスを取って、最終的なロスを計算する。
     """
-    # スケーリング
-    ppo_loss = awac_alpha * ppo_loss
-    offline_awac_loss = awac_beta * offline_awac_loss
-    online_awac_loss = awac_gamma * online_awac_loss
-    
     if enable_w:
         # PPO, KL-PPOのデータ数で正規化する。
         ppo_klppo_mask = torch.logical_or(leader_online_mask, follower_online_mask)
         ppo_klppo_mask = torch.logical_or(ppo_klppo_mask, off_policy_mask)
+        w = (ppo_klppo_mask.numel() / ppo_klppo_mask.sum()).detach()
+        ppo_loss = ppo_loss * w
+        online_awac_loss = online_awac_loss * w
         
-        ppo_loss = ppo_loss * (ppo_klppo_mask.numel() / ppo_klppo_mask.sum()).detach()
-        online_awac_loss = online_awac_loss * (ppo_klppo_mask.numel() / ppo_klppo_mask.sum()).detach()
+    # スケーリング
+    ppo_loss = awac_alpha * ppo_loss
+    offline_awac_loss = awac_beta * offline_awac_loss
+    online_awac_loss = awac_gamma * online_awac_loss
     
     
     # 合計ロス
@@ -184,7 +184,7 @@ def actor_loss_with_awac(old_action_neglog_probs_batch, action_neglog_probs, lea
     
     a_loss_info = {
         "ppo": ppo_loss.mean(), 
-        "awac": offline_awac_loss.mean(), 
+        "awac": offline_awac_loss.mean(),
         "klppo": online_awac_loss.mean()
         }
     """
