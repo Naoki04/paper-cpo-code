@@ -292,6 +292,7 @@ class A2CBase(BaseAlgorithm):
         self.save_batch = self.config.get('save_batch', False)
         self.is_double_critic = self.config.get('double_critic', False)
         self.scheduler_kl_data = self.config.get('scheduler_kl_data', False)
+        self.reduce_awac = self.config.get('reduce_awac', False)
         
         
         # アクターロス関数の選択
@@ -1474,6 +1475,16 @@ class A2CBase(BaseAlgorithm):
         # reset obs and last obs in extras
         extras['obs'][:,:, -self.intr_reward_coef_embd.shape[-1]:] = self.intr_reward_coef_embd
         extras['last_obs']['obs'][:,-self.intr_reward_coef_embd.shape[-1]:] = self.intr_reward_coef_embd
+        
+        if self.reduce_awac: # AWACデータをバッチから取り除く。デバッグ用。
+            # 2周目にあるAWACデータを削除する
+            for key in new_batch_dict.keys():
+                if isinstance(new_batch_dict[key], torch.Tensor): # tensorの場合はそのままフィルタリング
+                    new_batch_dict[key] = new_batch_dict[key][torch.logical_not(awac_mask)]
+                    
+                elif isinstance(new_batch_dict[key], list): # rnn_statesはtensorのlistなので要素をフィルタリング
+                    for i in range(len(new_batch_dict[key])):
+                        new_batch_dict[key][i] = new_batch_dict[key][i][:,torch.logical_not(awac_mask)[0:-1:self.horizon_length]]
        
         
         return new_batch_dict
