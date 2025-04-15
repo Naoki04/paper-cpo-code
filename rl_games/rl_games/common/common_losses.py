@@ -136,7 +136,6 @@ def actor_loss_with_awac(old_action_neglog_probs_batch, action_neglog_probs, lea
         surr1 = advantage * ratio
         surr2 = advantage * torch.clamp(ratio, 1.0 - curr_e_clip, 1.0 + curr_e_clip)
         ppo_loss = torch.max(-surr1, -surr2) # マイナスのmaxを取ることで、最小化問題に変換
-        # awac maskでマスキングする
     else:
         ppo_loss = (action_neglog_probs * advantage)
         print("??????????? not PPO ????????????")
