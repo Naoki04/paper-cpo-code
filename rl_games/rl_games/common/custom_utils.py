@@ -50,7 +50,7 @@ def create_sinusoidal_encoding(arr, dim, n=10):
     return torch.cat([torch.sin(arr.unsqueeze(-1) / denom), torch.cos(arr.unsqueeze(-1) / denom)], dim=-1)
 
 
-def filter_leader(val, orig_len, repeat_idxs, num_blocks, required_mask):
+def filter_leader(val, orig_len, repeat_idxs, num_blocks, required_mask=None):
     """
     Filters data corresponding to leader i.e. evaluation policy
     Used with mixed_expl
@@ -63,6 +63,8 @@ def filter_leader(val, orig_len, repeat_idxs, num_blocks, required_mask):
         new_val: [4800*2+800, 100]
         
     """
+    if required_mask is None:
+        required_mask = torch.ones(orig_len * len(repeat_idxs), dtype=torch.bool, device=val.device)
     
     if len(val) > 1: # tensorが来る[step, dim]や[step]のtensorが来る
         # 元の処理にrequired_maskを追加
