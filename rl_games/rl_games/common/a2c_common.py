@@ -1267,8 +1267,8 @@ class A2CBase(BaseAlgorithm):
                 ### SAPG2 ###
                 # AWAC用に、2周目のフォロワーのデータをリーダーのデータで書き換える。埋め込みはフォロワーのまま 
                 #(左: AWACデータの最初~リーダーに入る手前までの埋め込み以外のobs), (右: AWAC部分のリーダーデータの最初から最後まで、埋め込み以外のobs x フォロワーの数だけリピート)
-                obses[len(val):2*len(val)-self.intr_coef_block_size*self.horizon_length, :-1] = obses[2*len(val)-self.intr_coef_block_size*self.horizon_length:2*len(val), :-1].repeat(int(len(val)/self.intr_coef_block_size/self.horizon_length-1),1)
-                
+                obses[len(val):2*len(val)-self.intr_coef_block_size*self.horizon_length, :-self.intr_reward_coef_embd.shape[-1]] = obses[2*len(val)-self.intr_coef_block_size*self.horizon_length:2*len(val), :-self.intr_reward_coef_embd.shape[-1]].repeat(int(len(val)/self.intr_coef_block_size/self.horizon_length-1),1)
+
                 # リーダーデータをフォロワー埋め込みに書き換えたデータを管理するマスク
                 awac_mask = torch.zeros(len(obses), dtype=torch.bool, device=obses.device)
                 awac_mask[len(val):2*len(val)-self.intr_coef_block_size*self.horizon_length] = True
@@ -1288,14 +1288,13 @@ class A2CBase(BaseAlgorithm):
                     required_mask = torch.logical_or(awac_mask, follower_online_mask)
                     required_mask = torch.logical_or(required_mask, leader_online_mask)
                     required_mask = torch.logical_or(required_mask, mask)
-                    #print("required_mask.sum()", required_mask.sum())
                     
                     obses = filter_leader(obses, len(val), repeat_idxs, num_blocks, required_mask)
                     mask = filter_leader(mask, len(val), repeat_idxs, num_blocks, required_mask)
                     awac_mask = filter_leader(awac_mask, len(val), repeat_idxs, num_blocks, required_mask)
                     follower_online_mask = filter_leader(follower_online_mask, len(val), repeat_idxs, num_blocks, required_mask)
                     leader_online_mask = filter_leader(leader_online_mask, len(val), repeat_idxs, num_blocks, required_mask)
-                
+
                 """
                 # デバッグ用
                 print("Filter Leader後のデータ数")
@@ -1308,14 +1307,12 @@ class A2CBase(BaseAlgorithm):
                 print("follower_online_mask.sum()", follower_online_mask.sum())
                 print("leader_online_mask.shape", leader_online_mask.shape)
                 print("leader_online_mask.sum()", leader_online_mask.sum())
-                """
-                    
+                """ 
                 new_batch_dict[key] = obses
                 new_batch_dict['off_policy_mask'] = mask # 10400中800(オリジナルじゃない分)がTrue
                 new_batch_dict['awac_mask'] = awac_mask # 10400中4000(オリジナルをリーダーデータで書き換えた分)がTrue
                 new_batch_dict['leader_online_mask'] = leader_online_mask # 10400中800(リーダーのオンラインデータ)がTrue
                 new_batch_dict['follower_online_mask'] = follower_online_mask # 10400中800(フォロワーのオンラインデータ)がTrue
-                
                 
             elif key in ['values', 'returns','values1', 'values2']:
                 pass  # handled below
@@ -1341,7 +1338,6 @@ class A2CBase(BaseAlgorithm):
                 new_batch_dict[key] = torch.cat([val]*len(repeat_idxs), dim=0)
                 ### SAPG2 ###
                 # 前半のフォロワーデータをリーダーデータで書き換える
-
                 if len(val.shape) > 1: # 各行が次元を持っている場合[4800, 23](actions, mus, sigmas)
                     new_batch_dict[key][len(val):2*len(val)-self.intr_coef_block_size*self.horizon_length] = new_batch_dict[key][2*len(val)-self.intr_coef_block_size*self.horizon_length:2*len(val)].repeat(int(len(val)/self.intr_coef_block_size/self.horizon_length-1), 1)
                 else: # 各行がスカラーの場合([4800], (neglogacs, dones))は[800]をrepeat(5,1)すると[5,800]になるので、[4000]にするためにview(-1)する
@@ -1369,12 +1365,27 @@ class A2CBase(BaseAlgorithm):
         
         # 繰り返し分はもとのコードで処理する。
         for r_k in repeat_idxs[1:]: # オリジナルデータ(1周目)はスキップして、AWACデータとoff_policyデータ(フォロワーのリーダ埋め込み)に対して処理を行う。
-            mb_rewards = extras['rewards'] # torch.Size([16, 300, 1])
-            mb_obs = extras['obs'] # torch.Size([16, 300, 100])
-            last_obs_and_states = extras['last_obs'] # dict_keys(['obs', 'states']), ['obs']=torch.Size([300, 100]), ['states']=torch.Size([300, 99])
-            last_rnn_states = extras['last_rnn_states'] # 2, [0]=torch.Size([1, 300, 768])
-            mb_states = extras['states'] # Nonetype
-            mb_rnn_states = extras['rnn_states'] # 2, torch.Size([16, 1, 300, 768]) torch.Size([16, 1, 300, 768])
+            mb_rewards = extras['rewards'].clone() # torch.Size([16, 300, 1])
+            mb_obs = extras['obs'].clone() # torch.Size([16, 300, 100])
+            last_obs_and_states = {"obs": extras['last_obs']["obs"].clone()} # dict_keys(['obs', 'states']), ['obs']=torch.Size([300, 100]), ['states']=torch.Size([300, 99])
+            
+            if extras['last_obs'].get('states', None) is not None:
+                last_obs_and_states["states"] = extras['last_obs']['states'].clone()
+            
+            if extras["last_rnn_states"] is not None:
+                last_rnn_states = [extras['last_rnn_states'][0].clone(), extras['last_rnn_states'][1].clone()] # 2, [0]=torch.Size([1, 300, 768])
+            else:
+                last_rnn_states = None
+            
+            if extras['states'] is not None:
+                mb_states = extras['states'].clone() # Nonetype
+            else:
+                mb_states = None
+                
+            if extras['rnn_states'] is not None:
+                mb_rnn_states = [extras['rnn_states'][0].clone(), extras['rnn_states'][1].clone()] # 2, torch.Size([16, 1, 300, 768]) torch.Size([16, 1, 300, 768])
+            else:
+                mb_rnn_states = None
             
             if r_k == 0: # AWACデータについては、obsの埋め込み以外をリーダーデータで置き換えてから再計算する。
                 """
@@ -1418,8 +1429,8 @@ class A2CBase(BaseAlgorithm):
             mb_values = mb_values.reshape(*mb_obs.shape[:2], *mb_values.shape[1:])
             mb_values = torch.cat([mb_values, last_values.unsqueeze(0)], dim=0)
             
-            mb_fdones = extras['dones'] # torch.Size([16, 300])
-            fdones = extras['last_dones'] # torch.Size([300])
+            mb_fdones = extras['dones'].clone() # torch.Size([16, 300])
+            fdones = extras['last_dones'].clone() # torch.Size([300])
             
             if r_k == 0: # AWACデータについては、obsの埋め込み以外をリーダーデータで置き換えてから再計算する。
                 mb_fdones[:, :-self.intr_coef_block_size] = mb_fdones[:, -self.intr_coef_block_size:].repeat(1, int(mb_fdones.shape[1]/self.intr_coef_block_size-1))
@@ -1473,8 +1484,8 @@ class A2CBase(BaseAlgorithm):
                 new_batch_dict['values2'] = filter_leader(new_batch_dict['values2'], len(batch_dict['values2']), repeat_idxs, num_blocks, required_mask)
         
         # reset obs and last obs in extras
-        extras['obs'][:,:, -self.intr_reward_coef_embd.shape[-1]:] = self.intr_reward_coef_embd
-        extras['last_obs']['obs'][:,-self.intr_reward_coef_embd.shape[-1]:] = self.intr_reward_coef_embd
+        #extras['obs'][:,:, -self.intr_reward_coef_embd.shape[-1]:] = self.intr_reward_coef_embd
+        #extras['last_obs']['obs'][:,-self.intr_reward_coef_embd.shape[-1]:] = self.intr_reward_coef_embd
         
         if self.reduce_awac: # AWACデータをバッチから取り除く。デバッグ用。
             # 2周目にあるAWACデータを削除する
@@ -1484,7 +1495,7 @@ class A2CBase(BaseAlgorithm):
                     
                 elif isinstance(new_batch_dict[key], list): # rnn_statesはtensorのlistなので要素をフィルタリング
                     for i in range(len(new_batch_dict[key])):
-                        new_batch_dict[key][i] = new_batch_dict[key][i][:,torch.logical_not(awac_mask)[0:-1:self.horizon_length]]
+                        new_batch_dict[key][i] = new_batch_dict[key][i][:,torch.logical_not(awac_mask)[::self.horizon_length]]
        
         
         return new_batch_dict
@@ -1590,10 +1601,11 @@ class DiscreteA2CBase(A2CBase):
             values = self.value_mean_std(values)
             returns = self.value_mean_std(returns)
             self.value_mean_std.eval()
-        
+            
         advantages = torch.sum(advantages, axis=1)
+        
 
-        if self.normalize_advantage:
+        if self.normalize_advantage:            
             if self.is_rnn:
                 if self.normalize_rms_advantage:
                     advantages = self.advantage_mean_std(advantages, mask=rnn_masks)
@@ -1809,6 +1821,13 @@ class ContinuousA2CBase(A2CBase):
             if self.expl_type.startswith('mixed_expl') and self.use_others_experience != 'none':
                 if self.sapg2: # SAPG2用のデータ拡張
                     batch_dict = self.augment_batch_for_sapg2(orig_batch_dict, ps_extras) # SAPG2ではリーダーデータのフォロワー埋め込み・リーダーデータのリーダー埋め込み・フォロワーデータのリーダー埋め込みに拡張する
+                    """
+                    batch_dict = self.augment_batch_for_mixed_expl(orig_batch_dict, ps_extras)
+                    
+                    batch_dict["awac_mask"] = torch.zeros_like(batch_dict["off_policy_mask"])
+                    batch_dict["leader_online_mask"] = torch.zeros_like(batch_dict["off_policy_mask"])
+                    batch_dict["follower_online_mask"] = torch.logical_not(batch_dict["off_policy_mask"])
+                    """
                 else: # オリジナルのデータ拡張
                     batch_dict = self.augment_batch_for_mixed_expl(orig_batch_dict, ps_extras)
             else:
@@ -1860,7 +1879,7 @@ class ContinuousA2CBase(A2CBase):
 
         for mini_ep in range(0, self.mini_epochs_num):
             ep_kls = []
-            for i in range(len(self.dataset)):
+            for i in range(len(self.dataset)):    
                 # self.dataset[i]は1ミニバッチ分のデータがPPODataset.__getitem__から取得される。
                 #dict_keys(['old_values', 'old_logp_actions', 'advantages', 'returns', 'actions', 'obs', 'dones', 'rnn_masks', 'mu', 'sigma', 'off_policy_mask', 'rnn_states'])
                 a_loss, c_loss, entropy, kl, last_lr, lr_mul, cmu, csigma, b_loss, extras = self.train_actor_critic(self.dataset[i])
@@ -1920,6 +1939,7 @@ class ContinuousA2CBase(A2CBase):
         return batch_dict['step_time'], play_time, update_time, total_time, a_losses, c_losses, b_losses, entropies, kls, last_lr, lr_mul, extra_infos
 
     def prepare_dataset(self, batch_dict, train_value_mean_std=True):
+        
         obses = batch_dict['obses']
         returns = batch_dict['returns']
         dones = batch_dict['dones']
@@ -1942,8 +1962,6 @@ class ContinuousA2CBase(A2CBase):
                 self.value_mean_std.train()
                 
             values = self.value_mean_std(values)
-            #print("self.running_mean:", self.value_mean_std.running_mean)
-            #print("self.running_var:", self.value_mean_std.running_var)
             
             if self.is_double_critic: # val1,2はvalと同じように正規化する
                 self.value_mean_std.eval()
@@ -1954,9 +1972,8 @@ class ContinuousA2CBase(A2CBase):
             returns = self.value_mean_std(returns)
             self.value_mean_std.eval()
             
-
         advantages = torch.sum(advantages, axis=1)
-
+        
         if self.normalize_advantage:
             if self.is_rnn:
                 if self.normalize_rms_advantage:
@@ -1973,6 +1990,7 @@ class ContinuousA2CBase(A2CBase):
                     else:
                         mean, std = advantages.mean(), advantages.std()
                     advantages = (advantages - mean) / (std + 1e-8)
+                    
 
         dataset_dict = {}
         dataset_dict['old_values'] = values
