@@ -159,12 +159,12 @@ def actor_loss_with_awac(old_action_neglog_probs_batch, action_neglog_probs, lea
     surr2 = (-(leader_action_log_probs - action_neglog_probs)*lambda_ppo + advantage) * torch.clamp(ratio, 1.0 - curr_e_clip, 1.0 + curr_e_clip) # これは最大化したい値
     online_awac_loss = torch.max(-surr1, -surr2) # マイナスのmaxを取ることで、最小化問題に変換
     online_awac_loss = online_awac_loss * follower_online_mask
-    
+    """
     print("DEBUG")
     print("advantage: {}".format((advantage*follower_online_mask).sum()/follower_online_mask.sum()))
     print("lim:{}".format(((leader_action_log_probs - action_neglog_probs)*follower_online_mask).sum()/follower_online_mask.sum()))
-    
-    
+    """
+
     """
     # 4. 各ロスのバランスを取って、最終的なロスを計算する。
     """
