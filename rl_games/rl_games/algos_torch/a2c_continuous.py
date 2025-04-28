@@ -12,6 +12,8 @@ from torch import optim
 import torch
 import torch.distributed as dist 
 
+import copy
+
 
 class A2CAgent(a2c_common.ContinuousA2CBase):
 
@@ -199,7 +201,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             """
             # まず、embdをリーダー(0)にして、行動確率を計算
             with torch.no_grad():
-                leader_batch_dict = batch_dict.copy()
+                leader_batch_dict = copy.deepcopy(batch_dict)
                 leader_batch_dict['obs'][:,-self.intr_reward_coef_embd.shape[-1]:] = 0
                 # 推論
                 leader_res_dict = self.model(leader_batch_dict)
