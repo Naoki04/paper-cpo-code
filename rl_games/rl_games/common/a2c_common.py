@@ -2,6 +2,7 @@ import copy
 import math
 import os
 from omegaconf import DictConfig
+import pandas as pd
 
 from rl_games.common import vecenv
 
@@ -294,6 +295,10 @@ class A2CBase(BaseAlgorithm):
         self.is_double_critic = self.config.get('double_critic', False)
         self.scheduler_kl_data = self.config.get('scheduler_kl_data', False)
         self.reduce_awac = self.config.get('reduce_awac', False)
+        self.plot_kl = self.config.get('plot_kl', False)
+        
+        if self.plot_kl:
+            self.kl_path = os.path.join(self.train_dir, "kl_dists.csv")
         
         
         # アクターロス関数の選択
@@ -1235,7 +1240,11 @@ class A2CBase(BaseAlgorithm):
             if self.epoch_num % self.save_freq == 0:
                 torch.save(batch_dict, os.path.join(self.batch_dir, f"batch_dict_{self.epoch_num}.pt"))
                 #torch.save(extras, os.path.join(self.batch_dir, f"extras_{self.epoch_num}.pt"))
-        
+                    
+                
+        """
+        # データ拡張
+        """
         new_batch_dict = {}
         num_blocks = self.num_actors // self.intr_coef_block_size
         
@@ -1498,7 +1507,6 @@ class A2CBase(BaseAlgorithm):
                     for i in range(len(new_batch_dict[key])):
                         new_batch_dict[key][i] = new_batch_dict[key][i][:,torch.logical_not(awac_mask)[::self.horizon_length]]
        
-        
         return new_batch_dict
 
 
@@ -1877,10 +1885,25 @@ class ContinuousA2CBase(A2CBase):
         if self.use_ad_reward:
             extra_infos["ad_reward_mean"] = ps_extras["ad_reward_mean"]
             extra_infos["disc_loss_mean"] = ps_extras["disc_loss_mean"]
-
+        
+        if self.plot_kl:
+            kl_tensor_list = []
+            num_data_list = []
+            
         for mini_ep in range(0, self.mini_epochs_num):
             ep_kls = []
             for i in range(len(self.dataset)):    
+                """
+                # 分析のために各エージェント間のKL距離を計算する。
+                """
+                if self.plot_kl and mini_ep == 0:
+                    kl_tensor, num_data = self.calc_agents_kl(self.dataset[i])
+                    kl_tensor_list.append(kl_tensor)
+                    num_data_list.append(num_data)
+                
+                """
+                # 通常の学習
+                """
                 # self.dataset[i]は1ミニバッチ分のデータがPPODataset.__getitem__から取得される。
                 #dict_keys(['old_values', 'old_logp_actions', 'advantages', 'returns', 'actions', 'obs', 'dones', 'rnn_masks', 'mu', 'sigma', 'off_policy_mask', 'rnn_states'])
                 a_loss, c_loss, entropy, kl, last_lr, lr_mul, cmu, csigma, b_loss, extras = self.train_actor_critic(self.dataset[i])
@@ -1928,6 +1951,28 @@ class ContinuousA2CBase(A2CBase):
             self.diagnostics.mini_epoch(self, mini_ep)
             if self.normalize_input:
                 self.model.running_mean_std.eval() # don't need to update statstics more than one miniepoch
+
+        if self.plot_kl:
+            kl_tensor = torch.stack(kl_tensor_list)
+            num_data = torch.tensor(num_data_list)
+            # 重み付き平均KL距離を計算する。
+            kl_tensor = torch.sum(kl_tensor * num_data.unsqueeze(1).unsqueeze(2).to(self.ppo_device), dim=0) / torch.sum(num_data, dim=0)
+            # KL距離を平均化する。
+            print("KL distance", kl_tensor)
+            
+            # 保存
+            if os.path.exists(self.kl_path):
+                pass
+            kl_flat = kl_tensor.view(-1).cpu().numpy() # 6x6 -> 36
+            row = pd.DataFrame([list(kl_flat)])
+            row.to_csv(
+                self.kl_path,
+                mode="a",
+                index=False,
+                header= (not (os.path.exists(self.kl_path)))
+            )
+            
+    
 
         update_time_end = time.time()
         play_time = play_time_end - play_time_start
@@ -2030,6 +2075,7 @@ class ContinuousA2CBase(A2CBase):
                 dataset_dict['old_values1'] = values1
                 dataset_dict['old_values2'] = values2
             self.central_value_net.update_dataset(dataset_dict)
+            
             
             
                 

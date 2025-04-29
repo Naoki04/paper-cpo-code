@@ -206,7 +206,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 # 推論
                 leader_res_dict = self.model(leader_batch_dict)
                 leader_action_log_probs = leader_res_dict['prev_neglogp']
-            
+                
 
             # アクターのロスを計算する部分(普通のPPOロス)
             if self.sapg2:
@@ -381,6 +381,78 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             kl_dist, self.last_lr, lr_mul, \
             mu.detach(), sigma.detach(), b_loss, extras)
         
+        
+        """
+        # 分析のために各エージェント間のKL距離を計算する。
+        """
+        """
+        if self.plot_kl:
+            print("DEBUG----")
+            with torch.no_grad():
+                embeddings = self.intr_reward_coef_embd[::self.intr_coef_block_size,0].reshape(-1,1) # embeddingのtensor
+
+                for i in range(self.intr_reward_coef.shape[0]//self.intr_coef_block_size): # エージェントの数だけ繰り返す
+                    batch = copy.deepcopy(batch_dict) #dict_keys(['is_train', 'prev_actions', 'obs', 'rnn_states', 'seq_length', 'dones'])
+                    # 埋め込み変更
+                    batch['obs'][:,-self.intr_reward_coef_embd.shape[-1]:] = embeddings[i] # embeddingを入れる
+                    # 推論
+                    res_dict = self.model(leader_batch_dict)
+                    mus = res_dict['mus'][torch.logical_or(leader_online_mask, follower_online_mask)]
+                    sigmas = res_dict['sigmas'][torch.logical_or(leader_online_mask, follower_online_mask)]
+        """
+
+    def calc_agents_kl(self, input_dict):    
+        with torch.cuda.amp.autocast(enabled=self.mixed_precision):
+            with torch.no_grad():
+                actions_batch = input_dict['actions']
+                obs_batch = input_dict['obs']
+                obs_batch = self._preproc_obs(obs_batch)
+                leader_online_mask = input_dict['leader_online_mask']
+                follower_online_mask = input_dict['follower_online_mask']
+                """
+                # 基本のバッチを作る
+                """
+                batch_dict = {
+                    'is_train': False,
+                    'prev_actions': actions_batch, 
+                    'obs' : obs_batch,
+                }
+                rnn_masks = None
+                if self.is_rnn:
+                    rnn_masks = input_dict['rnn_masks']
+                    batch_dict['rnn_states'] = input_dict['rnn_states']
+                    batch_dict['seq_length'] = self.seq_length
+
+                    if self.zero_rnn_on_done:
+                        batch_dict['dones'] = input_dict['dones']   
+                """
+                # エージェントごとに埋め込みを変更して推論
+                """
+                embeddings = self.intr_reward_coef_embd[::self.intr_coef_block_size,0].reshape(-1,1) # embeddingのtensor
+                mus_list = []
+                sigmas_list = []
+                embeddings_list = embeddings.tolist()
+                for i in range(self.intr_reward_coef.shape[0]//self.intr_coef_block_size): # エージェントの数だけ繰り返す
+                    batch = copy.deepcopy(batch_dict) #dict_keys(['is_train', 'prev_actions', 'obs', 'rnn_states', 'seq_length', 'dones'])
+                    # 埋め込み変更
+                    batch['obs'][:,-self.intr_reward_coef_embd.shape[-1]:] = embeddings[i] # embeddingを入れる
+                    # 推論
+                    res_dict = self.model(batch)
+                    mus = res_dict['mus'][torch.logical_or(leader_online_mask, follower_online_mask)]
+                    sigmas = res_dict['sigmas'][torch.logical_or(leader_online_mask, follower_online_mask)]
+                    mus_list.append(mus)
+                    sigmas_list.append(sigmas)
+                """
+                # 各エージェント間のKL距離を計算して、tensorに格納
+                """
+                kl_tensor = torch.zeros(len(embeddings_list), len(embeddings_list), device=self.ppo_device)
+                for i in range(len(embeddings_list)):
+                    for j in range(len(embeddings_list)):
+                        kl_tensor[i][j] = torch_ext.policy_kl(mus_list[i], sigmas_list[i], mus_list[j], sigmas_list[j], reduce=True)
+                    
+                
+        return kl_tensor, torch.logical_or(leader_online_mask,follower_online_mask).sum()
+            
 
     # ロスの計算
     def train_actor_critic(self, input_dict):
