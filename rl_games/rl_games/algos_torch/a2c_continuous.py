@@ -380,26 +380,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         self.train_result = (a_loss_dict, c_loss, torch_ext.apply_masks([entropy.unsqueeze(1)], rnn_masks)[0][0], \
             kl_dist, self.last_lr, lr_mul, \
             mu.detach(), sigma.detach(), b_loss, extras)
-        
-        
-        """
-        # 分析のために各エージェント間のKL距離を計算する。
-        """
-        """
-        if self.plot_kl:
-            print("DEBUG----")
-            with torch.no_grad():
-                embeddings = self.intr_reward_coef_embd[::self.intr_coef_block_size,0].reshape(-1,1) # embeddingのtensor
-
-                for i in range(self.intr_reward_coef.shape[0]//self.intr_coef_block_size): # エージェントの数だけ繰り返す
-                    batch = copy.deepcopy(batch_dict) #dict_keys(['is_train', 'prev_actions', 'obs', 'rnn_states', 'seq_length', 'dones'])
-                    # 埋め込み変更
-                    batch['obs'][:,-self.intr_reward_coef_embd.shape[-1]:] = embeddings[i] # embeddingを入れる
-                    # 推論
-                    res_dict = self.model(leader_batch_dict)
-                    mus = res_dict['mus'][torch.logical_or(leader_online_mask, follower_online_mask)]
-                    sigmas = res_dict['sigmas'][torch.logical_or(leader_online_mask, follower_online_mask)]
-        """
+    
 
     def calc_agents_kl(self, input_dict):    
         with torch.cuda.amp.autocast(enabled=self.mixed_precision):
