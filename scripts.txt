@@ -1,8 +1,0 @@
-# テスト用
-./scripts/train_allegro_kuka.sh regrasping "test" 1 300 [] --sapg --lstm --num-expl-coef-blocks=6 --wandb-entity naoki-shitanda --ir-type=none --extra-args ""
-
-# SAPG設定で、wを有効化
-./scripts/train_allegro_kuka.sh regrasping "test" 1 24576 [] --sapg --lstm --num-expl-coef-blocks=6 --wandb-entity naoki-shitanda --ir-type=none --extra-args "--minibatch-size=196608 train.params.config.vanilla_sapg=True train.params.config.enable_w=True"
-
-
-./scripts/train_allegro_kuka.sh regrasping "test" 1 24576  [] --sapg --lstm --num-expl-coef-blocks=6 --wandb-entity naoki-shitanda --ir-type=none --extra-args "train.params.config.awac_alpha=1 train.params.config.awac_beta=0 train.params.config.awac_gamma=1 train.params.config.awac_lambda=0.000001 train.params.config.ad_reward_coef=0 train.params.config.ad_reward_type=sa train.params.config.enable_w=False train.params.config.off_policy_ceb=True --seed 0"
