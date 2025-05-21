@@ -128,7 +128,7 @@ def actor_loss(old_action_neglog_probs_batch, action_neglog_probs, advantage, is
     return a_loss
 
 # LOSS for CPO
-def actor_loss_with_cpo(old_action_neglog_probs_batch, action_neglog_probs, leader_action_log_probs, advantage, is_ppo, curr_e_clip, off_policy_mask, awac_mask, leader_online_mask, follower_online_mask, lambda_awac, lambda_ppo, awac_max, awac_alpha, awac_beta, awac_gamma, critic_mask, enable_w):
+def actor_loss_cpo(old_action_neglog_probs_batch, action_neglog_probs, leader_action_log_probs, advantage, is_ppo, curr_e_clip, off_policy_mask, awac_mask, leader_online_mask, follower_online_mask, lambda_awac, lambda_ppo, awac_max, awac_alpha, awac_beta, awac_gamma, critic_mask, enable_w):
     """
     # PPO Loss
     """

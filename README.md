@@ -24,7 +24,7 @@ We provide the implementation of our proposed method CPO. The code is based on [
   An adversarial reward is computed from a discriminator that distinguishes between agents based on their state-action pairs. After calculating this reward and updating returns and values, the discriminator is trained.
 
   Implemented in:
-  ```rl_games/rl_games/common/a2c_common.py```, function ```play_steps()```
+  ```rl_games/rl_games/common/a2c_common.py```, function ```play_steps() of class A2CBase```
 
 
 
@@ -48,6 +48,8 @@ cd rl_games
 pip install -e . 
 cd ..
 pip install -e .
+
+export LD_LIBRARY_PATH=<CONDA PATH i.e. anaconda3-2023.03>/envs/cpo/lib
 ```
 
 ### Reproducing performance
