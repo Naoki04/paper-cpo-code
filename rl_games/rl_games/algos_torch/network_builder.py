@@ -268,7 +268,7 @@ class A2CBuilder(NetworkBuilder):
             self.actor_mlp = self._build_mlp(**mlp_args)
             if self.separate:
                 self.critic_mlp = self._build_mlp(**mlp_args)
-            # モデルの初期化
+            
             if self.is_double_critic:
                 self.value1 = self._build_value_layer(out_size, self.value_size)
                 self.value2 = self._build_value_layer(out_size, self.value_size)
@@ -457,7 +457,7 @@ class A2CBuilder(NetworkBuilder):
                         states = (states,)
                 else:
                     out = self.actor_mlp(out)
-                # ここでcriticが推論
+                
                 if self.is_double_critic:
                     value1 = self.value1_act(self.value1(out))
                     value2 = self.value2_act(self.value2(out))

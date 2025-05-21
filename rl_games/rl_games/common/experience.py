@@ -337,7 +337,7 @@ class ExperienceBuffer:
         self.tensor_dict['rewards'] = self._create_tensor_from_space(val_space, obs_base_shape)
         self.tensor_dict['intr_rewards'] = self._create_tensor_from_space(intr_rew_space, obs_base_shape)
         self.tensor_dict['values'] = self._create_tensor_from_space(val_space, obs_base_shape)
-        # double critic用に確保しておく
+        
         self.tensor_dict['values1'] = self._create_tensor_from_space(val_space, obs_base_shape)
         self.tensor_dict['values2'] = self._create_tensor_from_space(val_space, obs_base_shape)
         

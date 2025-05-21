@@ -9,7 +9,7 @@ def get_name_prefix_suffix(args):
     name_suffix += f'{"_pbt"  if args.pbt else ""}_{args.expl_type}_{args.use_others_experience}_{args.num_policies}p'
     name_suffix += f'_mgpu' if args.multi_gpu else ''
     name_suffix += f'_{datetime.now().strftime("%d_%m_%Hh%Mm%Ss")}' if args.time_str is None else f'_{args.time_str}'
-    # seedを追記する
+    
     name_suffix += f'_seed{args.seed}'
     return name_prefix, name_suffix
 
@@ -58,7 +58,7 @@ def add_experiment_args(parser):
     parser.add_argument("--sigma", default="fixed", type=str, choices=["fixed", "obs_cond", "coef_cond"], help="Sigma type")
     parser.add_argument("--checkpoint", default=None, type=str, help="Checkpoint path")
     parser.add_argument("--time-str", default=None, type=str, help="Time string")
-    parser.add_argument("--sapg", action='store_true', help="SAPG")
+    parser.add_argument("--cpo", action='store_true', help="CPO")
     parser.add_argument("--extra-args", nargs='*', help="Extra args") # Of the form --key a1=value1 --key a2=value2
 
 
@@ -74,7 +74,7 @@ def add_experiment_args(parser):
     return parser
 
 def get_experiment_run_description(args):
-    if args.sapg:
+    if args.cpo:
         args.expl_type = 'mixed_expl_learn_param'
         args.use_others_experience = 'lf'
         args.sigma = 'coef_cond'
