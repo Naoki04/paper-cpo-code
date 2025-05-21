@@ -20,13 +20,12 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
     def __init__(self, base_name, params):
         a2c_common.ContinuousA2CBase.__init__(self, base_name, params)
         
-        # アクターモデルの構築
-        ## self.intr_reward_coef_embd は内発的報酬の係数のリスト(n_envs,1)であり、同じblockでは同じ値を持つ。(これはcommonの方で生成される)
+        
         if self.intr_reward_coef_embd is not None and not (self.expl_type.startswith('mixed_expl') and 'disjoint' in self.expl_type):
-            # 内的報酬がONかつ、(探索タイプがmixed_expl & disjointでない)場合、入力を内的報酬の係数で条件づける。
+        
             input_shape = (self.obs_shape[0] + self.intr_reward_coef_embd.shape[1],)
         else:
-            # それ以外では、入力は観測値のみ。
+        
             input_shape = self.obs_shape
         build_config = {
             'actions_num' : self.actions_num,
@@ -39,8 +38,8 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         }
         
         if self.expl_type.startswith('mixed_expl'): 
-            # self.intr_coef_block_sizeは各ブロックの環境数
-            build_config['coef_ids'] = self.intr_reward_coef_embd[::self.intr_coef_block_size,0] # 各ブロックの内的報酬の係数のリスト
+            
+            build_config['coef_ids'] = self.intr_reward_coef_embd[::self.intr_coef_block_size,0] 
             build_config['coef_id_idx'] = self.obs_shape[0]
         
         self.model = self.network.build(build_config)
@@ -48,10 +47,10 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         self.states = None
         self.init_rnn_from_model(self.model)
         self.last_lr = float(self.last_lr)
-        self.bound_loss_type = self.config.get('bound_loss_type', 'bound') # 'regularisation' or 'bound'
+        self.bound_loss_type = self.config.get('bound_loss_type', 'bound') 
         self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr), eps=1e-08, weight_decay=self.weight_decay)
         
-        # 共通価値ネットワークモデルの構築
+        
         if self.has_central_value:
             cv_config = {
                 'state_shape' : self.state_shape, 
@@ -72,15 +71,15 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             }
             self.central_value_net = central_value.CentralValueTrain(**cv_config).to(self.ppo_device)
 
-        self.use_experimental_cv = self.config.get('use_experimental_cv', True) # 共通価値ネットワークを使用するかどうかのフラグ
+        self.use_experimental_cv = self.config.get('use_experimental_cv', True) 
         
-        # Discriminatorの構築(state -> one-hot vector)
+        
         self.use_ad_reward = self.config.get('use_ad_reward', False)
         self.ad_reward_type = self.config.get('ad_reward_type', None)
         self.off_policy_ceb = self.config.get('off_policy_ceb', False)
         
         if self.use_ad_reward:
-            # Discriminatorの構築
+            
             discriminator_config = self.config.get('discriminator_config', None)
             assert discriminator_config is not None, "discriminator_config is None."
             
@@ -103,20 +102,20 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             print("disc_obs_len: ", disc_obs_len)
             
             self.discriminator = Discriminator(
-                input_shape=disc_obs_len, # 埋め込みを含まない観測値の形状
-                hidden_dim=list(discriminator_config["units"]), # 隠れ層の次元数
-                num_agents=int(self.num_actors/self.intr_coef_block_size), # エージェント数
-                activation_name=activation_name # 活性化関数
+                input_shape=disc_obs_len, 
+                hidden_dim=list(discriminator_config["units"]), 
+                num_agents=int(self.num_actors/self.intr_coef_block_size), 
+                activation_name=activation_name
             ).to(self.ppo_device)
-            self.ad_reward_coef = self.config.get('ad_reward_coef', None) # Discriminatorの報酬係数
-            #self.disc_optimizer = optim.Adam(self.discriminator.parameters(), float(self.last_lr), eps=1e-08, weight_decay=self.weight_decay)
+            self.ad_reward_coef = self.config.get('ad_reward_coef', None) 
+            
             disc_lr = self.config.get('learning_rate', None)
             self.disc_optimizer = optim.Adam(self.discriminator.parameters(), disc_lr, eps=1e-08, weight_decay=self.weight_decay)
-            self.disc_loss_func = torch.nn.CrossEntropyLoss(reduction='none') # 敵対的報酬の計算に使うので、reduceはしない。
+            self.disc_loss_func = torch.nn.CrossEntropyLoss(reduction='none') 
         
-        # ロールアウトバッファの構築
+        
         self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, self.is_discrete, self.is_rnn, self.ppo_device, self.seq_length)
-        # 300環境, 6エージェントの場合: batch_size=4800, minibatch_size=1200, is_discrete=False, is_rnn=True, ppo_device=cuda:0, seq_length=16(seq_lengthはRNN関連のパラメータ)
+        
         
         if self.normalize_value:
             self.value_mean_std = self.central_value_net.model.value_mean_std if self.has_central_value else self.model.value_mean_std
@@ -141,11 +140,11 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
     def get_masked_action_values(self, obs, action_masks):
         assert False
 
-    # ロスを計算する関数
+
     def calc_gradients(self, input_dict):
-        value_preds_batch = input_dict['old_values'] # データ収集時の価値関数の予測値、データ拡張時に変更したobs_embで再計算されている。
-        old_action_log_probs_batch = input_dict['old_logp_actions'] # データ収集時の方策の対数確率
-        advantage = input_dict['advantages'] # アドバンテージ、データ拡張時に変更したobs_embで再計算されている。
+        value_preds_batch = input_dict['old_values'] 
+        old_action_log_probs_batch = input_dict['old_logp_actions'] 
+        advantage = input_dict['advantages']
         old_mu_batch = input_dict['mu']
         old_sigma_batch = input_dict['sigma']
         return_batch = input_dict['returns']
@@ -162,9 +161,9 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             value_preds_batch2 = input_dict["old_values2"]
         
         if self.off_policy_ceb:
-            critic_mask = torch.logical_or(torch.logical_or(leader_online_mask, follower_online_mask), off_policy_mask) # offpolicyデータも使用
+            critic_mask = torch.logical_or(torch.logical_or(leader_online_mask, follower_online_mask), off_policy_mask)
         else:
-            critic_mask = torch.logical_or(leader_online_mask, follower_online_mask) # onlineデータのみ使用
+            critic_mask = torch.logical_or(leader_online_mask, follower_online_mask) 
             
         lr_mul = 1.0
         curr_e_clip = self.e_clip
@@ -186,36 +185,30 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
         with torch.cuda.amp.autocast(enabled=self.mixed_precision):
             res_dict = self.model(batch_dict)
-            action_log_probs = res_dict['prev_neglogp'] # 現在のポリシーそのactionを生成する対数確率
-            values = res_dict['values'] # 現在のモデルで予測した状態価値
-            entropy = res_dict['entropy'] # [1200] # 現在のポリシーのエントロピー
-            mu = res_dict['mus'] # [1200,23]
+            action_log_probs = res_dict['prev_neglogp']
+            values = res_dict['values'] 
+            entropy = res_dict['entropy']
+            mu = res_dict['mus'] 
             sigma = res_dict['sigmas']
             
-            if "values1" in res_dict.keys(): # double_criticの場合
+            if "values1" in res_dict.keys(): 
                 values1 = res_dict['values1']
                 values2 = res_dict['values2']
             
-            """
-            # 現在のリーダーでの行動確率を計算(KL-PPO用)、フォロワー更新に使うのでno_gradで計算する。
-            """
-            # まず、embdをリーダー(0)にして、行動確率を計算
+            
+            
             with torch.no_grad():
                 leader_batch_dict = copy.deepcopy(batch_dict)
                 leader_batch_dict['obs'][:,-self.intr_reward_coef_embd.shape[-1]:] = 0
-                # 推論
+            
                 leader_res_dict = self.model(leader_batch_dict)
                 leader_action_log_probs = leader_res_dict['prev_neglogp']
                 
 
-            # アクターのロスを計算する部分(普通のPPOロス)
+            
             if self.sapg2:
                 a_loss, a_loss_info = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, leader_action_log_probs, advantage, self.ppo, curr_e_clip, off_policy_mask, awac_mask, leader_online_mask, follower_online_mask, self.lambda_awac, self.lambda_ppo, self.awac_max, self.awac_alpha, self.awac_beta, self.awac_gamma, critic_mask, self.enable_w)
-                """
-                old_action_log_probs_batch: データを収集した方策の行動確率
-                action_log_probs: 現在の方策の行動確率(新しい埋め込み、つまりleader_onlineはleader, follower_onlineはfollower, awacはfollower, off_policyはleader)
-                leader_action_log_probs: 現在のリーダーの行動確率
-                """
+            
             else:
                 a_loss = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip, off_policy_mask)
             
@@ -233,20 +226,17 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             else:
                 c_loss = torch.zeros((len(values), 1), device=self.ppo_device)
             
-            # アクターの出力範囲を制限するためのboundロス
+            
             if self.bound_loss_type == 'regularisation':
-                # muの二乗和をロスとして追加
                 b_loss = self.reg_loss(mu)
             elif self.bound_loss_type == 'bound':
-                # muの上下限を超えた分の二乗和をロスを追加
                 b_loss = self.bound_loss(mu)
             else:
-                # なし
                 b_loss = torch.zeros(len(mu), device=self.ppo_device)
             
-            # オンラインデータでのみ学習するようにマスクを適用した後、正規化する
+            
             if self.sapg2:
-                b_mask = critic_mask #criticと同じmaskをかける
+                b_mask = critic_mask
                 assert b_loss.shape == b_mask.shape, "b_loss shape: {}, b_mask shape: {}".format(b_loss.shape, b_mask.shape)
                 b_loss = b_loss * b_mask
                 if self.enable_w:
@@ -254,9 +244,8 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                     b_loss = b_loss / w.detach()            
                 
                 
-            # エントロピーについてもマスクを適用してから、正規化する
             if self.sapg2:
-                entropy_mask = critic_mask #criticと同じmaskをかける
+                entropy_mask = critic_mask 
                 assert entropy.shape == entropy_mask.shape, "entropy shape: {}, entropy_mask shape: {}".format(entropy.shape, entropy_mask.shape)
                 entropy = entropy * entropy_mask
                 if self.enable_w:
@@ -280,21 +269,11 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 grads_off = self.get_grads(off_policy_loss)
                 grads_on = self.get_grads(on_policy_loss)
 
-            # rnn_maskを適用して平均計算
             losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss , (entropy_coef*entropy).unsqueeze(1), b_loss.unsqueeze(1)], rnn_masks)
             a_loss, c_loss, entropy_loss, b_loss = losses[0], losses[1], losses[2], losses[3]
 
             loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy_loss + b_loss * self.bounds_loss_coef
-            """
-            print("=========")
-            print("a_loss: ", a_loss)
-            print("c_loss: ", c_loss* self.critic_coef*0.5)
-            print("entropy_loss: ", entropy_loss*self.entropy_coef)
-            print("b_loss: ", b_loss* self.bounds_loss_coef)
-            print("critic_coef: ", self.critic_coef)
-            print("entropy_coef: ", entropy_coef)
-            print("bounds_loss_coef: ", self.bounds_loss_coef)
-            """
+            
 
             if self.multi_gpu:
                 self.optimizer.zero_grad()
@@ -306,27 +285,23 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         #TODO: Refactor this ugliest code of they year
         all_grads = self.trancate_gradients_and_step()
 
-        """
-        Adaptive SchedulerのためのKL距離を計算する。
-        - rnn_maskが存在する場合はrnn_maskのデータのみを使って計算
-        - no_awacの場合は、awacのデータを除外して計算
-        """
+        
         with torch.no_grad():
             reduce_kl = False #rnn_masks is None
             kl_dist = torch_ext.policy_kl(mu.detach(), sigma.detach(), old_mu_batch, old_sigma_batch, reduce_kl)
-            if self.scheduler_kl_data=="no_awac": # rnn_maskかつawac以外のデータでklを計算する場合
+            if self.scheduler_kl_data=="no_awac": 
                 scheduler_mask = torch.logical_or(leader_online_mask, follower_online_mask)
                 scheduler_mask = torch.logical_or(scheduler_mask, off_policy_mask)
-            elif self.scheduler_kl_data=="all": # rnn_maskのデータでklを計算する場合
+            elif self.scheduler_kl_data=="all": 
                 scheduler_mask = torch.ones_like(kl_dist, device=self.ppo_device)
             else:
                 NotImplementedError("scheduler_kl_data: {self.scheduler_kl_data} is not valid.")
 
             if rnn_masks is None:
-                kl_dist = (kl_dist * scheduler_mask).sum() / scheduler_mask.sum()  # 使ってるデータについて平均を取る
+                kl_dist = (kl_dist * scheduler_mask).sum() / scheduler_mask.sum()  
             else:
                 kl_dist = (kl_dist * scheduler_mask * rnn_masks).sum() / (scheduler_mask).sum()
-            #print("kl_dist: ", kl_dist)
+            
                 
 
         self.diagnostics.mini_batch(self,
@@ -370,7 +345,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             bl_ids = self.intr_reward_coef_embd[::self.intr_coef_block_size, 0].reshape(-1,1)
             bl_idxs = torch.argmax((obs_batch[:,-self.intr_reward_coef_embd.shape[1]] == bl_ids).float(), dim=0)
             extras["entropies"] = [torch.nan_to_num(entropy[bl_idxs == i].detach().mean()).item() for i in range(self.num_actors // self.intr_coef_block_size)]
-        # ログの記録
+        
         a_loss_dict = {
             "total": a_loss,
             "ppo": a_loss_info["ppo"],
@@ -390,9 +365,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 obs_batch = self._preproc_obs(obs_batch)
                 leader_online_mask = input_dict['leader_online_mask']
                 follower_online_mask = input_dict['follower_online_mask']
-                """
-                # 基本のバッチを作る
-                """
+                
                 batch_dict = {
                     'is_train': False,
                     'prev_actions': actions_batch, 
@@ -406,26 +379,22 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
                     if self.zero_rnn_on_done:
                         batch_dict['dones'] = input_dict['dones']   
-                """
-                # エージェントごとに埋め込みを変更して推論
-                """
-                embeddings = self.intr_reward_coef_embd[::self.intr_coef_block_size,0].reshape(-1,1) # embeddingのtensor
+                
+                embeddings = self.intr_reward_coef_embd[::self.intr_coef_block_size,0].reshape(-1,1)
                 mus_list = []
                 sigmas_list = []
                 embeddings_list = embeddings.tolist()
-                for i in range(self.intr_reward_coef.shape[0]//self.intr_coef_block_size): # エージェントの数だけ繰り返す
-                    batch = copy.deepcopy(batch_dict) #dict_keys(['is_train', 'prev_actions', 'obs', 'rnn_states', 'seq_length', 'dones'])
-                    # 埋め込み変更
-                    batch['obs'][:,-self.intr_reward_coef_embd.shape[-1]:] = embeddings[i] # embeddingを入れる
-                    # 推論
+                for i in range(self.intr_reward_coef.shape[0]//self.intr_coef_block_size): 
+                    batch = copy.deepcopy(batch_dict)
+                    
+                    batch['obs'][:,-self.intr_reward_coef_embd.shape[-1]:] = embeddings[i] 
+                    
                     res_dict = self.model(batch)
                     mus = res_dict['mus'][torch.logical_or(leader_online_mask, follower_online_mask)]
                     sigmas = res_dict['sigmas'][torch.logical_or(leader_online_mask, follower_online_mask)]
                     mus_list.append(mus)
                     sigmas_list.append(sigmas)
-                """
-                # 各エージェント間のKL距離を計算して、tensorに格納
-                """
+                
                 kl_tensor = torch.zeros(len(embeddings_list), len(embeddings_list), device=self.ppo_device)
                 for i in range(len(embeddings_list)):
                     for j in range(len(embeddings_list)):
@@ -435,7 +404,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         return kl_tensor, torch.logical_or(leader_online_mask,follower_online_mask).sum()
             
 
-    # ロスの計算
     def train_actor_critic(self, input_dict):
         self.calc_gradients(input_dict)
         return self.train_result
