@@ -24,7 +24,7 @@ We provide the implementation of our proposed method CPO. The code is based on [
   An adversarial reward is computed from a discriminator that distinguishes between agents based on their state-action pairs. After calculating this reward and updating returns and values, the discriminator is trained.
 
   Implemented in:
-  ```rl_games/rl_games/common/a2c_common.py```, function ```play_steps() of class A2CBase```
+  ```rl_games/rl_games/common/a2c_common.py```, function ```play_steps()```  of class ```A2CBase```
 
 
 
