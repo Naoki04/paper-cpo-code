@@ -6,25 +6,32 @@ Anonymous Authors \
 Under Review
 
 ## Key Implementation Points
-We provide the implementation of our proposed method CPO. The code is based on [SAPG](https://github.com/jayeshs999/sapg) implementation. Kighlightes of the implementation are as follows:
 
-- ### Data Handling for Leader-Follower Framework 
-  The leader-follower framework is implemented by conditioning a shared policy network on agent-specific vectors. Off-policy sampling between the leader and follower agents is realized by duplicating the collected trajectories and modifying their conditioning vectors, along with creating label masks, via the ```augment_batch_for_cpo``` function.
+We provide the implementation of our proposed method, CPO. The code is based on the [SAPG](https://github.com/jayeshs999/sapg) codebase. Highlights of the implementation are as follows:
 
-  Implemented in:
-  ```rl_games/rl_games/common/a2c_common.py```, function ```augment_batch_for_cpo()```
 
-- ### Loss Calculation
-  Policy loss computation for CPO is implemented in the ```actor_loss_cpo``` function. This function receives data with label masks and computes each loss component (e.g., PPO loss for the leader update, PPO loss with KL constraint and AWAC loss for the followers update) before applying the mask and averaging only over the relevant samples.
 
-  Implemented in:
-  ```rl_games/rl_games/common/common_losses.py```, function ```actor_loss_cpo()```
+- ### Data Handling for Leader-Follower Framework  
+  The leader-follower framework is implemented by conditioning a shared policy network on agent-specific vectors. Off-policy sampling between the leader and follower agents is realized by duplicating the collected trajectories and modifying their conditioning vectors, along with creating label masks, via the `augment_batch_for_cpo` function.
 
-- ### Adversarial Reward 
+  **Implemented in:**  
+  `rl_games/rl_games/common/a2c_common.py`, function `augment_batch_for_cpo()`
+
+
+
+- ### Loss Calculation  
+  Policy loss computation for CPO is implemented in the `actor_loss_cpo` function. This function receives data with label masks and computes each loss component (e.g., PPO loss for the leader update, PPO loss with KL constraint and AWAC loss for the follower updates) before applying the mask and averaging only over the relevant samples.
+
+  **Implemented in:**  
+  `rl_games/rl_games/common/common_losses.py`, function `actor_loss_cpo()`
+
+
+- ### Adversarial Reward  
   An adversarial reward is computed from a discriminator that distinguishes between agents based on their state-action pairs. After calculating this reward and updating returns and values, the discriminator is trained.
 
-  Implemented in:
-  ```rl_games/rl_games/common/a2c_common.py```, function ```play_steps()```  of class ```A2CBase```
+  **Implemented in:**  
+  `rl_games/rl_games/common/a2c_common.py`, function `play_steps()` of class `A2CBase`
+
 
 
 
