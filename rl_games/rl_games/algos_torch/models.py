@@ -435,7 +435,7 @@ class ModelMultiA2CContinuousLogStd(BaseModel):
                 + 0.5 * np.log(2.0 * np.pi) * x.size()[-1] \
                 + logstd.sum(dim=-1)
         
-    # このメソッドがモデルを構築する
+    
     def build(self, config):
         obs_shape = config['input_shape']
         normalize_value = config.get('normalize_value', False)
@@ -517,19 +517,9 @@ class ModelSACContinuous(BaseModel):
             return dist
 
 
-"""
-# Discriminatorの定義 
-"""
+
 class Discriminator(nn.Module):
     def __init__(self, input_shape, hidden_dim, num_agents, activation_name):
-        """
-        Discriminator: 状態からエージェントを識別するモデル
-
-        Args:
-            state_dim (int): 状態の次元数
-            hidden_dim (int): 隠れ層のユニット数
-            num_agents (int): エージェントの数 (分類数)
-        """
         super(Discriminator, self).__init__()
         self.fc1 = nn.Linear(input_shape, hidden_dim[0])
         self.fc2 = nn.Linear(hidden_dim[0], hidden_dim[1])
