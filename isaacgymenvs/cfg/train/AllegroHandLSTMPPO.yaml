@@ -5,7 +5,7 @@ defaults:
 params:
   network:
     mlp:
-      units: [512, 256, 128] #[256] # 
+      units: [512, 256, 128] 
       activation: elu
       d2rl: False
       initializer:
