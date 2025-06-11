@@ -13,6 +13,7 @@ import torch
 import torch.distributed as dist 
 
 import copy
+from torchsummary import summary
 
 
 class A2CAgent(a2c_common.ContinuousA2CBase):
@@ -85,12 +86,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             
             activation_name = discriminator_config["activation"]
             
-            print("==== Discriminator is build. ====")
-            print("input_shape: ", self.obs_shape)
-            print("hidden_dim: ", discriminator_config["units"])
-            print("num_agents: ", int(self.num_actors/self.intr_coef_block_size))
-            print("activation: ", activation_name)
-            print("=================================")
+            
             if self.ad_reward_type == 's':
                 disc_obs_len = self.obs_shape[0]
             elif self.ad_reward_type == 'a':
@@ -104,9 +100,12 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             self.discriminator = Discriminator(
                 input_shape=disc_obs_len, 
                 hidden_dim=list(discriminator_config["units"]), 
-                num_agents=int(self.num_actors/self.intr_coef_block_size), 
+                num_agents=int(self.num_actors/self.intr_coef_block_size)-1, 
                 activation_name=activation_name
             ).to(self.ppo_device)
+            print("==== Discriminator is build. ====")
+            summary(self.discriminator, (disc_obs_len,))
+            print("=================================")
             self.ad_reward_coef = self.config.get('ad_reward_coef', None) 
             
             disc_lr = self.config.get('learning_rate', None)
