@@ -10,6 +10,7 @@ params:
   network:
     name: actor_critic
     separate: False
+    double_critic: False 
 
     space:
       continuous:
@@ -47,15 +48,31 @@ params:
     reward_shaper:
       scale_value: 0.01
 
-    # SAPG2を有効にする
+    
     sapg2: True
-    vanilla_sapg: False # SAPGと同じデータだけ使う設定。
-    awac_lambda : 0.1 # AWACではmujocoベンチに対して1.0, 複雑なロボットタスクに対して0.3を設定していた
+    vanilla_sapg: False 
+    lambda_awac : 0.2 
+    lambda_ppo: 0
     awac_max: 100
-    awac_alpha: 1.0 # フォロワーオフライン学習の勾配スケール
-    awac_beta: 1e-4 # フォロワーオンライン学習の勾配スケール
-    awac_gamma: 1e-2 # PPOの勾配スケール(リーダーのオンライン・オフライン学習)
-    enable_w: True # ミニバッチの勾配を、ミニバッチ中の有効データ数でスケーリングする。
+    awac_alpha: 1 
+    awac_beta: 0 
+    awac_gamma: 1 
+    enable_w: False 
+    save_batch: False 
+    off_policy_ceb: True 
+    double_critic: ${..network.double_critic}
+    scheduler_kl_data: no_awac # ["no_awac","all"] 
+    reduce_awac: False 
+    plot_kl: False 
+
+    
+    use_ad_reward: True
+    ad_reward_type: "sa" # 'sa', 's', 'a'
+    discriminator_config: 
+      units: [1024, 1024, 512, 512]
+      activation: elu
+    ad_reward_coef: 0
+      
 
 
     num_actors: ${....task.env.numEnvs}   
@@ -66,10 +83,10 @@ params:
     schedule_type: standard
     kl_threshold: 0.016
     score_to_win: 1000000
-    max_epochs: 1000000
+    max_epochs: 52000 #(20G)#1000000
     max_frames: 100_000_000_000
     save_best_after: 100
-    save_frequency: 3000
+    save_frequency: 5200 #3000
     print_stats: True
     grad_norm: 1.0
     entropy_coef: 0.0

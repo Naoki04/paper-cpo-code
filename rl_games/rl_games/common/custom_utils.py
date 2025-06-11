@@ -50,37 +50,35 @@ def create_sinusoidal_encoding(arr, dim, n=10):
     return torch.cat([torch.sin(arr.unsqueeze(-1) / denom), torch.cos(arr.unsqueeze(-1) / denom)], dim=-1)
 
 
-def filter_leader(val, orig_len, repeat_idxs, num_blocks):
-    """
-    Filters data corresponding to leader i.e. evaluation policy
-    Used with mixed_expl
-    """
-    """
-    repeat_indexは[0, 0, ?]
-    obsの時は(envs300, horizon16),
-        origi_len = 4800
-        val: [4800*2, 100]
-        new_val: [4800*2+800, 100]
+def filter_leader(val, orig_len, repeat_idxs, num_blocks, required_mask=None):
+
+    if required_mask is None:
+        required_mask = torch.ones(orig_len * len(repeat_idxs), dtype=torch.bool, device=val.device)
+    
+    if len(val) > 1: 
         
-    """
-    if len(val) > 1:
         bsize = orig_len // num_blocks # 4800/6 = 800
         filtered_val = []
+        
         for i, idx in enumerate(repeat_idxs):#(i,idx)=(0,1,2),(0,0,?))
             if idx == 0:
-                filtered_val.append(val[i*orig_len:(i+1)*orig_len]) # [0:4800]を取り出す(オリジナル全て)
+                filtered_val.append(val[i*orig_len:(i+1)*orig_len][required_mask[i*orig_len:(i+1)*orig_len]]) 
             else:
-                filtered_val.append(val[i*orig_len + (idx-1)*bsize:i*orig_len + idx*bsize]) # [?x4800: ?x4800+800]を取り出す
+                filtered_val.append(val[i*orig_len + (idx-1)*bsize:i*orig_len + idx*bsize]) 
         new_val = torch.cat(filtered_val, dim=0)
         
-    else: # axis = 1
+    else:
+        
         bsize = orig_len // num_blocks
+        horizon_len = required_mask.numel() // (orig_len * len(repeat_idxs))
+        
         filtered_val = []
         for i, idx in enumerate(repeat_idxs):
             if idx == 0:
-                filtered_val.append(val[:, i*orig_len:(i+1)*orig_len])
+                filtered_val.append(val[:, i*orig_len:(i+1)*orig_len][:,required_mask[0:-1:horizon_len][i*orig_len:(i+1)*orig_len]])
             else:
                 filtered_val.append(val[:, i*orig_len + (idx-1)*bsize:i*orig_len + idx*bsize])
         new_val = torch.cat(filtered_val, dim=1)
-        
+    
     return new_val
+

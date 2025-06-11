@@ -21,9 +21,9 @@ class WandbAlgoObserver(AlgoObserver):
 
         import wandb
         
-        # seedを追記
-        wandb_unique_id = f"uid_{experiment_name}_seed{self.cfg.seed}"
-        wandb_name = f"{experiment_name}_seed{self.cfg.seed}"
+        
+        wandb_unique_id = f"uid_{experiment_name}"
+        wandb_name = f"{experiment_name}"
         print(f"Wandb using unique id {wandb_unique_id}")
 
         cfg = self.cfg

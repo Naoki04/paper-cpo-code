@@ -227,7 +227,6 @@ class ModelA2CContinuous(BaseModel):
                     'mus' : mu,
                     'sigmas' : sigma
                 }
-                return result
             else:
                 selected_action = distr.sample().squeeze()
                 neglogp = -distr.log_prob(selected_action).sum(dim=-1)
@@ -266,7 +265,10 @@ class ModelA2CContinuousLogStd(BaseModel):
             is_train = input_dict.get('is_train', True)
             prev_actions = input_dict.get('prev_actions', None)
             input_dict['obs'] = self.norm_obs(input_dict['obs'])
-            mu, logstd, value, states = self.a2c_network(input_dict)
+            if self.a2c_network.is_double_critic:
+                mu, logstd, value, states, value1, value2 = self.a2c_network(input_dict)
+            else:
+                mu, logstd, value, states = self.a2c_network(input_dict)
             sigma = torch.exp(logstd)
             distr = torch.distributions.Normal(mu, sigma, validate_args=False)
             if is_train:
@@ -279,7 +281,10 @@ class ModelA2CContinuousLogStd(BaseModel):
                     'rnn_states' : states,
                     'mus' : mu,
                     'sigmas' : sigma
-                }                
+                }            
+                if self.a2c_network.is_double_critic:
+                    result['values1'] = value1
+                    result['values2'] = value2    
                 return result
             else:
                 selected_action = distr.sample()
@@ -291,8 +296,11 @@ class ModelA2CContinuousLogStd(BaseModel):
                     'actions' : selected_action,
                     'rnn_states' : states,
                     'mus' : mu,
-                    'sigmas' : sigma
+                    'sigmas' : sigma,
                 }
+                if self.a2c_network.is_double_critic:
+                    result['values1'] = self.denorm_value(value1)
+                    result['values2'] = self.denorm_value(value2)   
                 return result
 
         def neglogp(self, x, mean, std, logstd):
@@ -427,6 +435,7 @@ class ModelMultiA2CContinuousLogStd(BaseModel):
                 + 0.5 * np.log(2.0 * np.pi) * x.size()[-1] \
                 + logstd.sum(dim=-1)
         
+    
     def build(self, config):
         obs_shape = config['input_shape']
         normalize_value = config.get('normalize_value', False)
@@ -509,3 +518,29 @@ class ModelSACContinuous(BaseModel):
 
 
 
+class Discriminator(nn.Module):
+    def __init__(self, input_shape, hidden_dim, num_agents, activation_name):
+        super(Discriminator, self).__init__()
+        self.fc1 = nn.Linear(input_shape, hidden_dim[0])
+        self.fc2 = nn.Linear(hidden_dim[0], hidden_dim[1])
+        self.fc3 = nn.Linear(hidden_dim[1], hidden_dim[2])  
+        self.fc4 = nn.Linear(hidden_dim[2], hidden_dim[3])
+        self.fc5 = nn.Linear(hidden_dim[3], num_agents)
+        self.softmax = nn.Softmax(dim=1)
+        
+        if activation_name == 'relu':
+            self.activation = torch.nn.ReLU()
+        elif activation_name == 'elu':
+            self.activation = torch.nn.ELU()
+        else:
+            raise ValueError('Not implemented activation function')
+        
+    def forward(self, x):
+        x = self.activation(self.fc1(x))
+        x = self.activation(self.fc2(x))
+        x = self.activation(self.fc3(x))
+        x = self.activation(self.fc4(x))
+        x = self.fc5(x)
+        y = self.softmax(x)
+        
+        return y

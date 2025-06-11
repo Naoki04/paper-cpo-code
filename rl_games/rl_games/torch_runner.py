@@ -111,10 +111,10 @@ class Runner:
     def set_vec_env(self, vec_env):
         self.params['config']['vec_env'] = vec_env
 
-    # 学習時はこれが実行される。
+    
     def run_train(self, args):
         print('Started to train')
-        # エージェントが作成される。algo_nameはa2c_continuous, paramsは色々。
+        
         agent = self.algo_factory.create(self.algo_name, base_name='run', params=self.params)
         _restore(agent, args)
         _override_sigma(agent, args)

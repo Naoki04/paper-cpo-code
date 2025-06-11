@@ -2,6 +2,7 @@ import copy
 import math
 import os
 from omegaconf import DictConfig
+import pandas as pd
 
 from rl_games.common import vecenv
 
@@ -23,6 +24,7 @@ from tensorboardX import SummaryWriter
 import torch 
 from torch import nn
 import torch.distributed as dist
+
  
 from time import sleep
 
@@ -259,6 +261,7 @@ class A2CBase(BaseAlgorithm):
         self.nn_dir = os.path.join(self.experiment_dir, 'nn')
         self.summaries_dir = os.path.join(self.experiment_dir, 'summaries')
         self.batch_dir = os.path.join(self.train_dir, 'batches')
+        
 
         os.makedirs(self.train_dir, exist_ok=True)
         os.makedirs(self.experiment_dir, exist_ok=True)
@@ -280,16 +283,24 @@ class A2CBase(BaseAlgorithm):
         self.value_bootstrap = self.config.get('value_bootstrap')
         self.use_smooth_clamp = self.config.get('use_smooth_clamp', False)
         self.sapg2 = self.config.get('sapg2', False)
-        self.awac_lambda = self.config.get('awac_lambda', False)
+        self.lambda_awac = self.config.get('lambda_awac', False)
+        self.lambda_ppo = self.config.get('lambda_ppo', False)
         self.awac_max = self.config.get('awac_max', False)
         self.awac_alpha = self.config.get('awac_alpha', False)
         self.awac_beta = self.config.get('awac_beta', False)
         self.awac_gamma = self.config.get('awac_gamma', False)
         self.vanilla_sapg = self.config.get('vanilla_sapg', False)
         self.enable_w = self.config.get('enable_w', False)
+        self.save_batch = self.config.get('save_batch', False)
+        self.is_double_critic = self.config.get('double_critic', False)
+        self.scheduler_kl_data = self.config.get('scheduler_kl_data', False)
+        self.reduce_awac = self.config.get('reduce_awac', False)
+        self.plot_kl = self.config.get('plot_kl', False)
+        
+        if self.plot_kl:
+            self.kl_path = os.path.join(self.train_dir, "kl_dists.csv")
         
         
-        # アクターロス関数の選択
         if self.use_smooth_clamp:
             self.actor_loss_func = common_losses.smoothed_actor_loss
         else:
@@ -298,7 +309,7 @@ class A2CBase(BaseAlgorithm):
             if self.vanilla_sapg:
                 self.actor_loss_func = common_losses.actor_loss_sapg
             else:
-                self.actor_loss_func = common_losses.actor_loss_with_awac
+                self.actor_loss_func = common_losses.actor_loss_cpo
             
 
         if self.normalize_advantage and self.normalize_rms_advantage:
@@ -419,13 +430,13 @@ class A2CBase(BaseAlgorithm):
         self.writer.add_scalar('performance/step_inference_time', play_time, frame)
         self.writer.add_scalar('performance/step_time', step_time, frame)
         
-        # a_lossの内訳も渡せるように分岐
+        
         if type(a_losses) == dict:
             ppo_losses = torch.tensor(a_losses['ppo'])
             awac_losses = torch.tensor(a_losses['awac'])
             klppo_losses = torch.tensor(a_losses['klppo'])
             a_losses = a_losses['total']
-            # 記録
+            
             self.writer.add_scalar('losses/a_loss/ppo_loss', ppo_losses.mean(), frame)
             self.writer.add_scalar('losses/a_loss/awac_loss', awac_losses.mean(), frame)
             self.writer.add_scalar('losses/a_loss/klppo_loss', klppo_losses.mean(), frame)
@@ -485,6 +496,7 @@ class A2CBase(BaseAlgorithm):
                 }
                 value = self.get_central_value(input_dict)
                 res_dict['values'] = value
+                
         return res_dict
 
     def get_values(self, obs, rnn_states):
@@ -511,6 +523,40 @@ class A2CBase(BaseAlgorithm):
                 result = self.model(input_dict)
                 value = result['values']
             return value
+        
+    def get_values1(self, obs, rnn_states):
+        with torch.no_grad():
+            if self.has_central_value:
+                exit("not implemented")
+            else:
+                self.model.eval()
+                processed_obs = self._preproc_obs(obs['obs'])
+                input_dict = {
+                    'is_train': False,
+                    'prev_actions': None, 
+                    'obs' : processed_obs,
+                    'rnn_states' : rnn_states
+                }
+                result = self.model(input_dict)
+                value1 = result['values1']
+            return value1
+        
+    def get_values2(self, obs, rnn_states):
+        with torch.no_grad():
+            if self.has_central_value:
+                exit("Not implemented")
+            else:
+                self.model.eval()
+                processed_obs = self._preproc_obs(obs['obs'])
+                input_dict = {
+                    'is_train': False,
+                    'prev_actions': None, 
+                    'obs' : processed_obs,
+                    'rnn_states' : rnn_states
+                }
+                result = self.model(input_dict)
+                value2 = result['values2']
+            return value2
 
     @property
     def device(self):
@@ -723,7 +769,11 @@ class A2CBase(BaseAlgorithm):
         state['current_rewards'] = self.current_rewards
         state['current_shaped_rewards'] = self.current_shaped_rewards
         state['current_lengths'] = self.current_lengths
-     
+
+        
+        if self.use_ad_reward:
+            state['ad_reward_discriminator'] = self.discriminator.state_dict()
+
         return state
 
     def set_full_state_weights(self, weights, set_epoch=True):
@@ -766,6 +816,15 @@ class A2CBase(BaseAlgorithm):
                 self.intr_reward_model.load_state_dict(weights['intr_reward_model'])
             else:
                 print('WARNING: no intr_reward_model in checkpoint')
+                
+        
+        if self.use_ad_reward:
+            if 'ad_reward_discriminator' in weights:
+                self.discriminator.load_state_dict(weights['ad_reward_discriminator'])
+            else:
+                print("##########")
+                print('WARNING: no ad_reward_discriminator in checkpoint')
+                print("##########")
         
     def get_weights(self):
         state = self.get_stats_weights()
@@ -863,110 +922,120 @@ class A2CBase(BaseAlgorithm):
         return obs_batch
 
     def play_steps(self):
-        update_list = self.update_list
-        step_time = 0.0
-        
-        if self.is_rnn:
-            mb_rnn_states = self.mb_rnn_states
-            rnn_state_buffer = [torch.zeros((self.horizon_length, *s.shape), dtype=s.dtype, device=s.device) for s in self.rnn_states]
-
-        for n in range(self.horizon_length):
+        with torch.no_grad():
+            update_list = self.update_list
+            step_time = 0.0
+            
             if self.is_rnn:
-                if n % self.seq_length == 0:
-                    for s, mb_s in zip(self.rnn_states, mb_rnn_states):
-                        mb_s[n // self.seq_length,:,:,:] = s
+                mb_rnn_states = self.mb_rnn_states
+                rnn_state_buffer = [torch.zeros((self.horizon_length, *s.shape), dtype=s.dtype, device=s.device) for s in self.rnn_states]
+            
+            for n in range(self.horizon_length):
+                if self.is_rnn:
+                    if n % self.seq_length == 0:
+                        for s, mb_s in zip(self.rnn_states, mb_rnn_states):
+                            mb_s[n // self.seq_length,:,:,:] = s
 
-                for i, s in enumerate(self.rnn_states):
-                    rnn_state_buffer[i][n,:,:,:] = s
+                    for i, s in enumerate(self.rnn_states):
+                        rnn_state_buffer[i][n,:,:,:] = s
 
+                    if self.has_central_value:
+                        self.central_value_net.pre_step_rnn(n)
+
+                if self.use_action_masks:
+                    masks = self.vec_env.get_action_masks()
+                    res_dict = self.get_masked_action_values(self.obs, masks)
+                else:
+                    res_dict = self.get_action_values(self.obs, self.rnn_states)
+
+                if self.is_rnn:
+                    self.rnn_states = res_dict['rnn_states']
+                self.experience_buffer.update_data('obses', n, self.obs['obs'])
+                self.experience_buffer.update_data('dones', n, self.dones.byte())
+
+                for k in update_list:
+                    self.experience_buffer.update_data(k, n, res_dict[k])
+                    
+                    
+                    
                 if self.has_central_value:
-                    self.central_value_net.pre_step_rnn(n)
+                    self.experience_buffer.update_data('states', n, self.obs['states'])
 
-            if self.use_action_masks:
-                masks = self.vec_env.get_action_masks()
-                res_dict = self.get_masked_action_values(self.obs, masks)
+                step_time_start = time.time()
+                self.obs, rewards, intr_rewards, self.dones, infos = self.env_step(res_dict['actions'])
+                
+                step_time_end = time.time()
+
+                step_time += (step_time_end - step_time_start)
+
+                shaped_rewards = self.rewards_shaper(rewards)
+                intr_rewards = self.rewards_shaper(intr_rewards)
+
+                if self.value_bootstrap and 'time_outs' in infos:
+                    shaped_rewards += self.gamma * res_dict['values'] * self.cast_obs(infos['time_outs']).unsqueeze(1).float()
+
+                self.experience_buffer.update_data('rewards', n, shaped_rewards)
+                self.experience_buffer.update_data('intr_rewards', n, intr_rewards)
+
+                self.current_rewards += rewards
+                self.current_shaped_rewards += shaped_rewards
+                self.current_lengths += 1
+                all_done_indices = self.dones.nonzero(as_tuple=False)
+                env_done_indices = all_done_indices[::self.num_agents]
+
+                if self.is_rnn and len(all_done_indices) > 0:
+                    if self.zero_rnn_on_done:
+                        for s in self.rnn_states:
+                            s[:, all_done_indices, :] = s[:, all_done_indices, :] * 0.0
+                    if self.has_central_value:
+                        self.central_value_net.post_step_rnn(all_done_indices)
+
+                if len(env_done_indices[env_done_indices >= self.ignore_env_boundary]) > 0:
+                    indices = env_done_indices[env_done_indices >= self.ignore_env_boundary].view(-1, 1)
+                    self.game_rewards.update(self.current_rewards[indices])
+                    self.game_shaped_rewards.update(self.current_shaped_rewards[indices])
+                    self.game_lengths.update(self.current_lengths[indices])
+                self.algo_observer.process_infos(infos, env_done_indices, ignore_env_boundary=self.ignore_env_boundary)
+
+                not_dones = 1.0 - self.dones.float()
+
+                self.current_rewards = self.current_rewards * not_dones.unsqueeze(1)
+                self.current_shaped_rewards = self.current_shaped_rewards * not_dones.unsqueeze(1)
+                self.current_lengths = self.current_lengths * not_dones
+
+            """
+            # fetch values and calcurate GAE
+            """
+            last_values = self.get_values(self.obs, self.rnn_states)
+
+            fdones = self.dones.float()
+            mb_fdones = self.experience_buffer.tensor_dict['dones'].float()
+
+            mb_values = self.experience_buffer.tensor_dict['values']
+            mb_rewards = self.experience_buffer.tensor_dict['rewards'] # environmental reward
+            mb_intr_rewards = self.experience_buffer.tensor_dict['intr_rewards'] # intrinsic reward
+            
+            if self.intr_reward_coef is not None:
+                mb_total_rewards = mb_rewards + self.intr_reward_coef.unsqueeze(0).unsqueeze(2) * mb_intr_rewards 
             else:
-                res_dict = self.get_action_values(self.obs, self.rnn_states)
+                mb_total_rewards = mb_rewards
+            
+            
+            mb_advs = self.discount_values(fdones, last_values, mb_fdones, mb_values, mb_total_rewards)
+            mb_returns = mb_advs + mb_values
+            batch_dict = self.experience_buffer.get_transformed_list(swap_and_flatten01, self.tensor_list)
 
+            batch_dict['returns'] = swap_and_flatten01(mb_returns)
+            batch_dict['played_frames'] = self.batch_size
             if self.is_rnn:
-                self.rnn_states = res_dict['rnn_states']
-            self.experience_buffer.update_data('obses', n, self.obs['obs'])
-            self.experience_buffer.update_data('dones', n, self.dones.byte())
+                states = []
+                for mb_s in mb_rnn_states:
+                    t_size = mb_s.size()[0] * mb_s.size()[2]
+                    h_size = mb_s.size()[3]
+                    states.append(mb_s.permute(1,2,0,3).reshape(-1,t_size, h_size))
 
-            for k in update_list:
-                self.experience_buffer.update_data(k, n, res_dict[k])
-            if self.has_central_value:
-                self.experience_buffer.update_data('states', n, self.obs['states'])
-
-            step_time_start = time.time()
-            self.obs, rewards, intr_rewards, self.dones, infos = self.env_step(res_dict['actions'])
-            step_time_end = time.time()
-
-            step_time += (step_time_end - step_time_start)
-
-            shaped_rewards = self.rewards_shaper(rewards)
-            intr_rewards = self.rewards_shaper(intr_rewards)
-
-            if self.value_bootstrap and 'time_outs' in infos:
-                shaped_rewards += self.gamma * res_dict['values'] * self.cast_obs(infos['time_outs']).unsqueeze(1).float()
-
-            self.experience_buffer.update_data('rewards', n, shaped_rewards)
-            self.experience_buffer.update_data('intr_rewards', n, intr_rewards)
-
-            self.current_rewards += rewards
-            self.current_shaped_rewards += shaped_rewards
-            self.current_lengths += 1
-            all_done_indices = self.dones.nonzero(as_tuple=False)
-            env_done_indices = all_done_indices[::self.num_agents]
-
-            if self.is_rnn and len(all_done_indices) > 0:
-                if self.zero_rnn_on_done:
-                    for s in self.rnn_states:
-                        s[:, all_done_indices, :] = s[:, all_done_indices, :] * 0.0
-                if self.has_central_value:
-                    self.central_value_net.post_step_rnn(all_done_indices)
-
-            if len(env_done_indices[env_done_indices >= self.ignore_env_boundary]) > 0:
-                indices = env_done_indices[env_done_indices >= self.ignore_env_boundary].view(-1, 1)
-                self.game_rewards.update(self.current_rewards[indices])
-                self.game_shaped_rewards.update(self.current_shaped_rewards[indices])
-                self.game_lengths.update(self.current_lengths[indices])
-            self.algo_observer.process_infos(infos, env_done_indices, ignore_env_boundary=self.ignore_env_boundary)
-
-            not_dones = 1.0 - self.dones.float()
-
-            self.current_rewards = self.current_rewards * not_dones.unsqueeze(1)
-            self.current_shaped_rewards = self.current_shaped_rewards * not_dones.unsqueeze(1)
-            self.current_lengths = self.current_lengths * not_dones
-
-        last_values = self.get_values(self.obs, self.rnn_states)
-
-        fdones = self.dones.float()
-        mb_fdones = self.experience_buffer.tensor_dict['dones'].float()
-
-        mb_values = self.experience_buffer.tensor_dict['values']
-        mb_rewards = self.experience_buffer.tensor_dict['rewards']
-        mb_intr_rewards = self.experience_buffer.tensor_dict['intr_rewards']
-        if self.intr_reward_coef is not None:
-            mb_total_rewards = mb_rewards + self.intr_reward_coef.unsqueeze(0).unsqueeze(2) * mb_intr_rewards
-        else:
-            mb_total_rewards = mb_rewards
-        
-        mb_advs = self.discount_values(fdones, last_values, mb_fdones, mb_values, mb_total_rewards)
-        mb_returns = mb_advs + mb_values
-        batch_dict = self.experience_buffer.get_transformed_list(swap_and_flatten01, self.tensor_list)
-
-        batch_dict['returns'] = swap_and_flatten01(mb_returns)
-        batch_dict['played_frames'] = self.batch_size
-        if self.is_rnn:
-            states = []
-            for mb_s in mb_rnn_states:
-                t_size = mb_s.size()[0] * mb_s.size()[2]
-                h_size = mb_s.size()[3]
-                states.append(mb_s.permute(1,2,0,3).reshape(-1,t_size, h_size))
-
-            batch_dict['rnn_states'] = states
-        batch_dict['step_time'] = step_time
+                batch_dict['rnn_states'] = states
+            batch_dict['step_time'] = step_time
         
         extras = {
             'rewards' : mb_rewards, 
@@ -980,16 +1049,87 @@ class A2CBase(BaseAlgorithm):
             'mb_intr_rewards' : mb_intr_rewards if self.intr_reward_model is not None else None,
             'mb_extr_rewards' : mb_rewards,
         }
+        
+        """
+        # Train discriminator and calculate adversarial reward
+        """
+        if self.use_ad_reward:
+            with torch.no_grad():
+                # fetch obs except for intr_reward_coef
+                pure_obs = self.experience_buffer.tensor_dict['obses'][:, :, :-self.intr_reward_coef_embd.shape[-1]]
+                pure_obs_flat = pure_obs.view(-1, *pure_obs.shape[2:])
+                pure_obs_flat = pure_obs_flat.detach().clone().requires_grad_()
+                
+                # fetch action
+                actions_flat = self.experience_buffer.tensor_dict["actions"] # (16, n_envs, n_actions)
+                actions_flat = actions_flat.view(-1, *actions_flat.shape[2:])
+                actions_flat = actions_flat.detach().clone().requires_grad_()
+                
+                # generate class label
+                step_per_block = pure_obs_flat.shape[0] // (self.num_actors // self.intr_coef_block_size) 
+                y_label = torch.arange(self.num_actors // self.intr_coef_block_size, device=self.ppo_device).flip(0).repeat_interleave(step_per_block).long()
+
+                # generate input for discriminator
+                if self.ad_reward_type == "s":
+                    disc_input = pure_obs_flat
+                elif self.ad_reward_type == "a":
+                    disc_input = actions_flat
+                elif self.ad_reward_type == "sa":
+                    disc_input = torch.cat([pure_obs_flat, actions_flat], dim=1)
+                
+                # calculate discriminator loss
+                y_pred = self.discriminator(disc_input)
+                disc_loss_array = self.disc_loss_func(y_pred, y_label) 
+                
+                """
+                # adversarial reward calculation
+                """
+                # set adversarial reward 0 for the leader
+                followers_mask = (y_label != 0)
+                
+                ad_rewards = - disc_loss_array * self.ad_reward_coef * followers_mask # loss to reward
+                ad_rewards = ad_rewards.view(self.horizon_length, -1, 1)
+                
+                # recalculate return
+                reward_with_ad_rew = mb_total_rewards + ad_rewards
+                
+                mb_advs_with_ad_rew = self.discount_values(fdones, last_values, mb_fdones, mb_values, reward_with_ad_rew)
+                mb_returns_with_ad_rew = mb_advs_with_ad_rew + mb_values
+
+                
+                batch_dict['returns_with_ad_rew'] = swap_and_flatten01(mb_returns_with_ad_rew)
+                
+                extras["ad_reward_mean"] = ad_rewards.mean().item()*(followers_mask.sum().item()/ad_rewards.shape[1])
+                extras["disc_loss_mean"] = disc_loss_array.mean().item()
+            
+            # Train discriminator
+            with torch.enable_grad():  
+                # shuffle data
+                perm = torch.randperm(disc_input.shape[0])
+                disc_input = disc_input[perm].detach()
+                y_label = y_label[perm].detach()
+                
+                for i in range(0, disc_input.shape[0], self.minibatch_size):
+                   
+                    obs_batch = disc_input[i:i+self.minibatch_size]
+                    y_batch = y_label[i:i+self.minibatch_size]
+                    
+                    self.disc_optimizer.zero_grad()
+                    y_pred = self.discriminator(obs_batch)
+                    disc_loss_array = self.disc_loss_func(y_pred, y_batch)
+                    disc_loss = disc_loss_array.mean()
+                    disc_loss.backward()
+                    self.disc_optimizer.step()
+                    
+            
+        
         return batch_dict, extras
     
     def augment_batch_for_mixed_expl(self, batch_dict, extras, repeat_idxs=None):
-        # batch_dict.keys(): dict_keys(['actions', 'neglogpacs', 'values', 'mus', 'sigmas', 'obses', 'dones', 'returns', 'played_frames', 'rnn_states', 'step_time'])
-        # extras.keys(): dict_keys(['rewards', 'obs', 'last_obs', 'states', 'dones', 'last_dones', 'rnn_states', 'last_rnn_states', 'mb_intr_rewards', 'mb_extr_rewards'])
         
         new_batch_dict = {}
-        num_blocks = self.num_actors // self.intr_coef_block_size
-        
-        # デフォではNone
+        num_blocks = self.num_actors // self.intr_coef_block_size        
+
         if repeat_idxs is None:
             num_repeat = min(num_blocks, int(self.config['off_policy_ratio']) + 1)
             repeat_idxs = [0] + [int(x) for x in np.random.choice(range(1, self.num_actors // self.intr_coef_block_size), num_repeat-1, replace=False)]
@@ -1000,18 +1140,18 @@ class A2CBase(BaseAlgorithm):
             if key in ['played_frames', 'step_time']:
                 new_batch_dict[key] = val
             elif key == 'obses':
-                # obsの末尾にself.intr_reward_coef_embdを追加する操作。オリジナル分以外は0にすることで、offline化する。
+                
                 intr_coef_embd = torch.cat([torch.roll(self.intr_reward_coef_embd, self.intr_coef_block_size*i, dims=0) for i in repeat_idxs], dim=0)
-                obses = torch.cat([val]*len(repeat_idxs), dim=0) # obsesも2回分繰り返す
+                obses = torch.cat([val]*len(repeat_idxs), dim=0) 
                 obses[:, -self.intr_reward_coef_embd.shape[-1]:] = intr_coef_embd.repeat_interleave(self.horizon_length, dim=0)
                 mask = torch.zeros(len(obses), dtype=torch.bool, device=obses.device)
-                mask[len(val):] = True # maskはオリジナル分だけFalse. (9600)
-                if self.use_others_experience == 'lf': # leader follower type update
-                    # オリジナル1個分(全エージェント)と、他のエージェント1個分を取得。4800+800=5600
+                mask[len(val):] = True 
+                if self.use_others_experience == 'lf': 
+                    
                     obses = filter_leader(obses, len(val), repeat_idxs, num_blocks)
                     mask = filter_leader(mask, len(val), repeat_idxs, num_blocks)
                 new_batch_dict[key] = obses
-                new_batch_dict['off_policy_mask'] = mask # 5600中800(オリジナルじゃない分)がTrue
+                new_batch_dict['off_policy_mask'] = mask 
                     
 
             elif key in ['values', 'returns']:
@@ -1040,7 +1180,6 @@ class A2CBase(BaseAlgorithm):
             mb_states = extras['states']
             mb_rnn_states = extras['rnn_states']
             
-            # extraのobsについてもここで埋め込みを書き換える
             mb_obs[:,:, -self.intr_reward_coef_embd.shape[-1]:] = torch.roll(self.intr_reward_coef_embd, self.intr_coef_block_size*r_k, dims=0)
             last_obs_and_states['obs'][:,-self.intr_reward_coef_embd.shape[-1]:] = torch.roll(self.intr_reward_coef_embd, self.intr_coef_block_size*r_k, dims=0)
             
@@ -1083,142 +1222,150 @@ class A2CBase(BaseAlgorithm):
         return new_batch_dict
     
     
-    def augment_batch_for_sapg2(self, batch_dict, extras, repeat_idxs=None):
-        # batch_dict.keys(): dict_keys(['actions', 'neglogpacs', 'values', 'mus', 'sigmas', 'obses', 'dones', 'returns', 'played_frames', 'rnn_states', 'step_time'])
-        # extras.keys(): dict_keys(['rewards', 'obs', 'last_obs', 'states', 'dones', 'last_dones', 'rnn_states', 'last_rnn_states', 'mb_intr_rewards', 'mb_extr_rewards'])
-        # 50, 40, 30, 20, 10, 0の順で入ってくる
-        
+    def augment_batch_for_cpo(self, batch_dict, extras, repeat_idxs=None):
+
+        if self.save_batch:
+            if self.epoch_num % self.save_freq == 0:
+                torch.save(batch_dict, os.path.join(self.batch_dir, f"batch_dict_{self.epoch_num}.pt"))
+                    
+
         new_batch_dict = {}
         num_blocks = self.num_actors // self.intr_coef_block_size
         
-        # デフォではNone
         if repeat_idxs is None:
             num_repeat = min(num_blocks, int(self.config['off_policy_ratio']) + 1)
-            # デフォだと3回繰り返す。１周目はオリジナルデータ, 2週目はリーダーデータをフォロワー埋め込み、３周目はフォロワーデータにリーダー埋め込み
+            
             repeat_idxs = [0, 0] + [int(x) for x in np.random.choice(range(1, self.num_actors // self.intr_coef_block_size), num_repeat-1, replace=False)]
             if self.multi_gpu:
                 dist.broadcast_object_list(repeat_idxs, 0)
                 
-                
-        for key, val in batch_dict.items():
+        from collections import OrderedDict
+        sorted_keys = ['obses'] + [k for k in batch_dict.keys() if k != 'obses']
+        ordered_batch_dict = OrderedDict((k, batch_dict[k]) for k in sorted_keys)
+        
+
+        
+        for key, val in ordered_batch_dict.items():
             if key in ['played_frames', 'step_time']:
                 new_batch_dict[key] = val
             elif key == 'obses':
-                # obsの末尾にself.intr_reward_coef_embdを追加する操作。オリジナル分以外は0にすることで、offline化する。
                 intr_coef_embd = torch.cat([torch.roll(self.intr_reward_coef_embd, self.intr_coef_block_size*i, dims=0) for i in repeat_idxs], dim=0)
-                # obsesも2回分繰り返す
                 obses = torch.cat([val]*len(repeat_idxs), dim=0) 
-                # 後半分のobsの埋め込みをずらして書き換える(後でfilterでリーダー分だけ残す)
                 obses[:, -self.intr_reward_coef_embd.shape[-1]:] = intr_coef_embd.repeat_interleave(self.horizon_length, dim=0) 
                 
-                
-                ### SAPG2 ###
-                # フォロワーのオリジナルデータをリーダーデータで書き換える。埋め込みはそのまま 
-                obses[len(val):2*len(val)-self.intr_coef_block_size*self.horizon_length, :-1] = obses[2*len(val)-self.intr_coef_block_size*self.horizon_length:2*len(val), :-1].repeat(int(len(val)/self.intr_coef_block_size/self.horizon_length-1),1)
-                
-                # リーダーデータをフォロワー埋め込みに書き換えたデータを管理するマスク
+                obses[len(val):2*len(val)-self.intr_coef_block_size*self.horizon_length, :-self.intr_reward_coef_embd.shape[-1]] = obses[2*len(val)-self.intr_coef_block_size*self.horizon_length:2*len(val), :-self.intr_reward_coef_embd.shape[-1]].repeat(int(len(val)/self.intr_coef_block_size/self.horizon_length-1),1)
+
                 awac_mask = torch.zeros(len(obses), dtype=torch.bool, device=obses.device)
                 awac_mask[len(val):2*len(val)-self.intr_coef_block_size*self.horizon_length] = True
-                # フォロワーのオンラインデータをマスクで管理
                 follower_online_mask = torch.zeros(len(obses), dtype=torch.bool, device=obses.device)
                 follower_online_mask[:len(val)-self.intr_coef_block_size*self.horizon_length] = True
-                # リーダーのオンラインデータをマスクで管理
                 leader_online_mask = torch.zeros(len(obses), dtype=torch.bool, device=obses.device)
                 leader_online_mask[len(val)-self.intr_coef_block_size*self.horizon_length: len(val)] = True
                 
-                
-                
                 mask = torch.zeros(len(obses), dtype=torch.bool, device=obses.device)
-                mask[2*len(val):] = True # maskはオリジナル分だけFalse. (9600)
+                mask[2*len(val):] = True 
+            
+                
                 if self.use_others_experience == 'lf': # leader follower type update
-                    # オリジナル1個分(全エージェント)と、他のエージェント1個分を取得。4800+800=5600
-                    obses = filter_leader(obses, len(val), repeat_idxs, num_blocks)
-                    mask = filter_leader(mask, len(val), repeat_idxs, num_blocks)
-                    awac_mask = filter_leader(awac_mask, len(val), repeat_idxs, num_blocks)
-                    follower_online_mask = filter_leader(follower_online_mask, len(val), repeat_idxs, num_blocks)
-                    leader_online_mask = filter_leader(leader_online_mask, len(val), repeat_idxs, num_blocks)
                     
+                    required_mask = torch.logical_or(awac_mask, follower_online_mask)
+                    required_mask = torch.logical_or(required_mask, leader_online_mask)
+                    required_mask = torch.logical_or(required_mask, mask)
+                    
+                    obses = filter_leader(obses, len(val), repeat_idxs, num_blocks, required_mask)
+                    mask = filter_leader(mask, len(val), repeat_idxs, num_blocks, required_mask)
+                    awac_mask = filter_leader(awac_mask, len(val), repeat_idxs, num_blocks, required_mask)
+                    follower_online_mask = filter_leader(follower_online_mask, len(val), repeat_idxs, num_blocks, required_mask)
+                    leader_online_mask = filter_leader(leader_online_mask, len(val), repeat_idxs, num_blocks, required_mask)
+
                 new_batch_dict[key] = obses
-                new_batch_dict['off_policy_mask'] = mask # 10400中800(オリジナルじゃない分)がTrue
-                new_batch_dict['awac_mask'] = awac_mask # 10400中4000(オリジナルをリーダーデータで書き換えた分)がTrue
-                new_batch_dict['leader_online_mask'] = leader_online_mask # 10400中800(リーダーのオンラインデータ)がTrue
-                new_batch_dict['follower_online_mask'] = follower_online_mask # 10400中800(フォロワーのオンラインデータ)がTrue
+                new_batch_dict['off_policy_mask'] = mask 
+                new_batch_dict['awac_mask'] = awac_mask 
+                new_batch_dict['leader_online_mask'] = leader_online_mask 
+                new_batch_dict['follower_online_mask'] = follower_online_mask 
                 
-                
-            elif key in ['values', 'returns']:
+            elif key in ['values', 'returns','values1', 'values2']:
                 pass  # handled below
             elif key == 'rnn_states':
                 if val is not None:
-                    # valはリストで、[tensorA[1,300,768], tensorB[1,300,768]]のようになっている。
-                    # この*lenとcatにより、new_batch = [tensorA[1,300,768]を2つ並べた[1,600,768], tensorB[1,300,768]を2つ並べた[1,600,768]]になる。
+                   
                     new_batch_dict[key] = [torch.cat([val[i]]*len(repeat_idxs), dim=1) for i in range(len(val))]
                     
-                    ### SAPG2 ###
-                    # よって、tensorA, Bそれぞれについて0~250, 300~550の部分をリーダーデータで書き換える。
-                    # 前半のフォロワーデータをリーダーデータで書き換える
-                    #print(val[0].shape[1]-self.intr_coef_block_size) # 250
-                    #print(val[0].shape[1]) # 300
-                    #print(2*val[0].shape[1]-self.intr_coef_block_size) # 550
-                    # tensorAの部分
                     new_batch_dict[key][0][:,val[0].shape[1]:2*val[0].shape[1]-self.intr_coef_block_size] = new_batch_dict[key][0][:,2*val[0].shape[1]-self.intr_coef_block_size:2*val[0].shape[1]].repeat(1,int(val[0].shape[1]/self.intr_coef_block_size-1),1)
-                    new_batch_dict[key][0][:,2*val[0].shape[1]:3*val[0].shape[1]-self.intr_coef_block_size] = new_batch_dict[key][0][:,3*val[0].shape[1]-self.intr_coef_block_size:].repeat(1,int(val[0].shape[1]/self.intr_coef_block_size-1),1)
-                    # tensorBの部分
+                   
                     new_batch_dict[key][1][:,val[0].shape[1]:2*val[0].shape[1]-self.intr_coef_block_size] = new_batch_dict[key][1][:,2*val[1].shape[1]-self.intr_coef_block_size:2*val[1].shape[1]].repeat(1,int(val[1].shape[1]/self.intr_coef_block_size-1),1)
-                    new_batch_dict[key][1][:,2*val[0].shape[1]:3*val[0].shape[1]-self.intr_coef_block_size] = new_batch_dict[key][1][:,3*val[1].shape[1]-self.intr_coef_block_size:].repeat(1,int(val[1].shape[1]/self.intr_coef_block_size-1),1)
-                    
                     
                     if self.use_others_experience == 'lf':
-                        new_batch_dict[key] = [filter_leader(new_batch_dict[key][i], val[i].shape[1], repeat_idxs, num_blocks) for i in range(len(val))]
+                        new_batch_dict[key] = [filter_leader(new_batch_dict[key][i], val[i].shape[1], repeat_idxs, num_blocks, required_mask) for i in range(len(val))]
                 else:
                     new_batch_dict[key] = None
             else:
-                new_batch_dict[key] = torch.cat([val]*len(repeat_idxs), dim=0)
-                ### SAPG2 ###
-                # 前半のフォロワーデータをリーダーデータで書き換える
-                if len(val.shape) > 1: # 各行が次元を持っている場合
-                    new_batch_dict[key][len(val):2*len(val)-self.intr_coef_block_size*self.horizon_length] = new_batch_dict[key][2*len(val)-self.intr_coef_block_size*self.horizon_length:2*len(val)].repeat(int(len(val)/self.intr_coef_block_size/self.horizon_length-1), 1)
-                else: # 各行がスカラーの場合は[800]をrepeat(5,1)すると[5,800]になるので、[4000]にするためにview(-1).squeeze(0)する
-                    new_batch_dict[key][len(val):2*len(val)-self.intr_coef_block_size*self.horizon_length] = new_batch_dict[key][2*len(val)-self.intr_coef_block_size*self.horizon_length:2*len(val)].repeat(int(len(val)/self.intr_coef_block_size/self.horizon_length-1), 1).view(-1).squeeze(0)    
                 
+                new_batch_dict[key] = torch.cat([val]*len(repeat_idxs), dim=0)
+                
+                
+                if len(val.shape) > 1: 
+                    new_batch_dict[key][len(val):2*len(val)-self.intr_coef_block_size*self.horizon_length] = new_batch_dict[key][2*len(val)-self.intr_coef_block_size*self.horizon_length:2*len(val)].repeat(int(len(val)/self.intr_coef_block_size/self.horizon_length-1), 1)
+                else: 
+                    new_batch_dict[key][len(val):2*len(val)-self.intr_coef_block_size*self.horizon_length] = new_batch_dict[key][2*len(val)-self.intr_coef_block_size*self.horizon_length:2*len(val)].repeat(int(len(val)/self.intr_coef_block_size/self.horizon_length-1), 1).view(-1)   
+                    
                 if self.use_others_experience == 'lf': # leader follower type update
-                    new_batch_dict[key] = filter_leader(new_batch_dict[key], len(val), repeat_idxs, num_blocks)
+                    new_batch_dict[key] = filter_leader(new_batch_dict[key], len(val), repeat_idxs, num_blocks, required_mask)
 
         
-        ##### ここ実装する！！！！#####
-        # new_batch_dictには1.リーダーデータ(フォロワー埋め込み)4000、2.リーダーデータリーダー埋め込み(800)、3.フォロワーデータリーダー埋め込み(800)が入っており、1と3はreturnとvalueの再計算が必要。
-        # # フォロワーデータに関しては、リーダーデータに書き換えて、価値とリターンを再計算する。リーダーのオンラインデータはそのまま。
-        # クリティック学習用のオリジナルデータは更新しないので、そのまま入れておく。
-        new_returns_list = [batch_dict['returns']]
-        new_values_list = [batch_dict['values']]
-        
-        
-        
-        
-        # 繰り返し分はもとのコードで処理する。
-        for r_k in repeat_idxs[1:]: # クリティック用のデータ(1個目)はスキップ、2個目のリーダーオンラインデータ以外, 3個目のデータに適用
-            mb_rewards = extras['rewards'] # torch.Size([16, 300, 1])
-            mb_obs = extras['obs'] # torch.Size([16, 300, 100])
-            last_obs_and_states = extras['last_obs'] # dict_keys(['obs', 'states']), ['obs']=torch.Size([300, 100]), ['states']=torch.Size([300, 99])
-            last_rnn_states = extras['last_rnn_states'] # 2, [0]=torch.Size([1, 300, 768])
-            mb_states = extras['states'] # Nonetype
-            mb_rnn_states = extras['rnn_states'] # 2, torch.Size([16, 1, 300, 768]) torch.Size([16, 1, 300, 768])
+        new_values_list = [batch_dict['values']] 
+        if self.is_double_critic:
+            new_values1_list = [batch_dict['values1']]
+            new_values2_list = [batch_dict['values2']]
             
-            if r_k == 0: # 初めのデータについてはフォロワーデータをリーダーデータでおきかえて処理する。(埋め込みはそのまま)
-                mb_rewards[:, :mb_rewards.shape[1]-self.intr_coef_block_size,:] = mb_rewards[:,mb_rewards.shape[1]-self.intr_coef_block_size:].repeat(1, int(mb_rewards.shape[1]/self.intr_coef_block_size-1), 1)
-                mb_obs[:, :mb_obs.shape[1]-self.intr_coef_block_size,:-1] = mb_obs[:, mb_obs.shape[1]-self.intr_coef_block_size:, :-1].repeat(1, int(mb_obs.shape[1]/self.intr_coef_block_size-1), 1)
-                last_obs_and_states["obs"][:last_obs_and_states["obs"].shape[0]-self.intr_coef_block_size,:-1] = last_obs_and_states["obs"][last_obs_and_states["obs"].shape[0]-self.intr_coef_block_size:, :-1].repeat(int(last_obs_and_states["obs"].shape[0]/self.intr_coef_block_size-1), 1)
-                last_obs_and_states["states"][:last_obs_and_states["states"].shape[0]-self.intr_coef_block_size] = last_obs_and_states["states"][last_obs_and_states["states"].shape[0]-self.intr_coef_block_size:].repeat(int(last_obs_and_states["states"].shape[0]/self.intr_coef_block_size-1), 1)
-                last_rnn_states[0][:,:last_rnn_states[0].shape[1]-self.intr_coef_block_size] = last_rnn_states[0][:,last_rnn_states[0].shape[1]-self.intr_coef_block_size:].repeat(1, int(last_rnn_states[0].shape[1]/self.intr_coef_block_size-1), 1)
-                last_rnn_states[1][:,:last_rnn_states[1].shape[1]-self.intr_coef_block_size] = last_rnn_states[1][:,last_rnn_states[1].shape[1]-self.intr_coef_block_size:].repeat(1, int(last_rnn_states[1].shape[1]/self.intr_coef_block_size-1), 1)
-                # mb_statesがnoneでない場合はassertion
+        if self.use_ad_reward: 
+            new_returns_list = [batch_dict['returns_with_ad_rew']]
+        else:
+            new_returns_list = [batch_dict['returns']]
+        
+        
+        for r_k in repeat_idxs[1:]:
+            mb_rewards = extras['rewards'].clone()
+            mb_obs = extras['obs'].clone() 
+            last_obs_and_states = {"obs": extras['last_obs']["obs"].clone()} 
+            
+            if extras['last_obs'].get('states', None) is not None:
+                last_obs_and_states["states"] = extras['last_obs']['states'].clone()
+            
+            if extras["last_rnn_states"] is not None:
+                last_rnn_states = [extras['last_rnn_states'][0].clone(), extras['last_rnn_states'][1].clone()] 
+            else:
+                last_rnn_states = None
+            
+            if extras['states'] is not None:
+                mb_states = extras['states'].clone() 
+            else:
+                mb_states = None
+                
+            if extras['rnn_states'] is not None:
+                mb_rnn_states = [extras['rnn_states'][0].clone(), extras['rnn_states'][1].clone()] 
+            else:
+                mb_rnn_states = None
+            
+            if r_k == 0:
+                
+                mb_rewards[:, :-self.intr_coef_block_size,:] = mb_rewards[:,-self.intr_coef_block_size:,:].repeat(1, int(mb_rewards.shape[1]/self.intr_coef_block_size-1), 1)
+                mb_obs[:, :-self.intr_coef_block_size,:-1] = mb_obs[:, -self.intr_coef_block_size:, :-1].repeat(1, int(mb_obs.shape[1]/self.intr_coef_block_size-1), 1)
+                last_obs_and_states["obs"][:-self.intr_coef_block_size,:-1] = last_obs_and_states["obs"][-self.intr_coef_block_size:, :-1].repeat(int(last_obs_and_states["obs"].shape[0]/self.intr_coef_block_size-1), 1)
+                if "states" in last_obs_and_states.keys():
+                    last_obs_and_states["states"][:-self.intr_coef_block_size] = last_obs_and_states["states"][-self.intr_coef_block_size:].repeat(int(last_obs_and_states["states"].shape[0]/self.intr_coef_block_size-1), 1)
+                if last_rnn_states is not None:
+                    assert len(last_rnn_states) == 2, f"last_rnn_states length is not 2, but {last_rnn_states}"
+                    last_rnn_states[0][:,:-self.intr_coef_block_size] = last_rnn_states[0][:,-self.intr_coef_block_size:].repeat(1, int(last_rnn_states[0].shape[1]/self.intr_coef_block_size-1), 1)
+                    last_rnn_states[1][:,:-self.intr_coef_block_size] = last_rnn_states[1][:,-self.intr_coef_block_size:].repeat(1, int(last_rnn_states[1].shape[1]/self.intr_coef_block_size-1), 1)
+                
                 assert mb_states is None, f"mb_states is None, but {type(mb_states), mb_states}"
-                mb_rnn_states[0][:,:,:mb_rnn_states[0].shape[2]-self.intr_coef_block_size] = mb_rnn_states[0][:,:,mb_rnn_states[0].shape[2]-self.intr_coef_block_size:].repeat(1,1, int(mb_rnn_states[0].shape[2]/self.intr_coef_block_size-1), 1)
-                mb_rnn_states[1][:,:,:mb_rnn_states[1].shape[2]-self.intr_coef_block_size] = mb_rnn_states[1][:,:,mb_rnn_states[1].shape[2]-self.intr_coef_block_size:].repeat(1,1, int(mb_rnn_states[1].shape[2]/self.intr_coef_block_size-1), 1)
+                if mb_rnn_states is not None:
+                    mb_rnn_states[0][:,:,:-self.intr_coef_block_size] = mb_rnn_states[0][:,:,-self.intr_coef_block_size:].repeat(1,1, int(mb_rnn_states[0].shape[2]/self.intr_coef_block_size-1), 1)
+                    mb_rnn_states[1][:,:,:-self.intr_coef_block_size] = mb_rnn_states[1][:,:,-self.intr_coef_block_size:].repeat(1,1, int(mb_rnn_states[1].shape[2]/self.intr_coef_block_size-1), 1)
                     
                 
-                
-            else: # リーダーのオフライン学習データについてはこれまで同様の処理をする。
-                # extraのobsについてもここで埋め込みを書き換える
+            else: 
                 mb_obs[:,:, -self.intr_reward_coef_embd.shape[-1]:] = torch.roll(self.intr_reward_coef_embd, self.intr_coef_block_size*r_k, dims=0)
                 last_obs_and_states['obs'][:,-self.intr_reward_coef_embd.shape[-1]:] = torch.roll(self.intr_reward_coef_embd, self.intr_coef_block_size*r_k, dims=0)
             
@@ -1239,11 +1386,12 @@ class A2CBase(BaseAlgorithm):
             mb_values = mb_values.reshape(*mb_obs.shape[:2], *mb_values.shape[1:])
             mb_values = torch.cat([mb_values, last_values.unsqueeze(0)], dim=0)
             
-            mb_fdones = extras['dones'] # torch.Size([16, 300])
-            fdones = extras['last_dones'] # torch.Size([300])
-            if r_k == 0:
-                mb_fdones[:, :mb_fdones.shape[1]-self.intr_coef_block_size] = mb_fdones[:, mb_fdones.shape[1]-self.intr_coef_block_size:].repeat(1, int(mb_fdones.shape[1]/self.intr_coef_block_size-1))
-                fdones[:fdones.shape[0]-self.intr_coef_block_size] = fdones[fdones.shape[0]-self.intr_coef_block_size:].repeat(int(fdones.shape[0]/self.intr_coef_block_size-1), 1).view(-1).squeeze(0)
+            mb_fdones = extras['dones'].clone() # torch.Size([16, 300])
+            fdones = extras['last_dones'].clone() # torch.Size([300])
+            
+            if r_k == 0: 
+                mb_fdones[:, :-self.intr_coef_block_size] = mb_fdones[:, -self.intr_coef_block_size:].repeat(1, int(mb_fdones.shape[1]/self.intr_coef_block_size-1))
+                fdones[:-self.intr_coef_block_size] = fdones[-self.intr_coef_block_size:].repeat(int(fdones.shape[0]/self.intr_coef_block_size-1), 1).view(-1).squeeze(0)
                 
 
             mb_fdones = torch.cat([mb_fdones, fdones.unsqueeze(0)], dim=0)
@@ -1253,33 +1401,55 @@ class A2CBase(BaseAlgorithm):
             new_returns_list.append(swap_and_flatten01(mb_returns))
             new_values_list.append(swap_and_flatten01(mb_values[:-1]))
             
-            
-            # リーダーのオンライン学習については、オリジナルデータに差し替える。
-            if r_k == 0:
-                new_returns_list[0][len(batch_dict['returns'])-self.intr_coef_block_size*self.horizon_length:] = batch_dict['returns'][len(batch_dict['returns'])-self.intr_coef_block_size*self.horizon_length:]
-                new_values_list[0][len(batch_dict['values'])-self.intr_coef_block_size*self.horizon_length:] = batch_dict['values'][len(batch_dict['values'])-self.intr_coef_block_size*self.horizon_length:]
-
+            if self.is_double_critic: 
+                mb_values1 = []
+                for i in range((flattened_mb_obs.shape[0] + 8191) // 8192):
+                    mb_values1.append(self.get_values1({
+                        'obs': flattened_mb_obs[i*8192:(i+1)*8192], 
+                        'states': flattened_mb_states[i*8192:(i+1)*8192] if mb_states is not None else None
+                        }, rnn_states=[s[:, i*8192:(i+1)*8192] for s in flattened_rnn_states] if flattened_rnn_states is not None else None))
+                mb_values1 = torch.cat(mb_values1, dim=0)
+                last_values1 = self.get_values1(last_obs_and_states, last_rnn_states)
+                mb_values1 = mb_values1.reshape(*mb_obs.shape[:2], *mb_values1.shape[1:])
+                mb_values1 = torch.cat([mb_values1, last_values1.unsqueeze(0)], dim=0)
+                new_values1_list.append(swap_and_flatten01(mb_values1[:-1]))
+                
+                mb_values2 = []
+                for i in range((flattened_mb_obs.shape[0] + 8191) // 8192):
+                    mb_values2.append(self.get_values2({
+                        'obs': flattened_mb_obs[i*8192:(i+1)*8192], 
+                        'states': flattened_mb_states[i*8192:(i+1)*8192] if mb_states is not None else None
+                        }, rnn_states=[s[:, i*8192:(i+1)*8192] for s in flattened_rnn_states] if flattened_rnn_states is not None else None))
+                mb_values2 = torch.cat(mb_values2, dim=0)
+                last_values2 = self.get_values2(last_obs_and_states, last_rnn_states)
+                mb_values2 = mb_values2.reshape(*mb_obs.shape[:2], *mb_values2.shape[1:])
+                mb_values2 = torch.cat([mb_values2, last_values2.unsqueeze(0)], dim=0)
+                new_values2_list.append(swap_and_flatten01(mb_values2[:-1]))
+                
+                
         new_batch_dict['returns'] = torch.cat(new_returns_list, dim=0)
         new_batch_dict['values'] = torch.cat(new_values_list, dim=0)
+        if self.is_double_critic:
+            new_batch_dict['values1'] = torch.cat(new_values1_list, dim=0)
+            new_batch_dict['values2'] = torch.cat(new_values2_list, dim=0)
+            
         if self.use_others_experience == 'lf':
-            new_batch_dict['returns'] = filter_leader(new_batch_dict['returns'], len(batch_dict['returns']), repeat_idxs, num_blocks)
-            new_batch_dict['values'] = filter_leader(new_batch_dict['values'], len(batch_dict['values']), repeat_idxs, num_blocks)
+            new_batch_dict['returns'] = filter_leader(new_batch_dict['returns'], len(batch_dict['returns']), repeat_idxs, num_blocks, required_mask)
+            new_batch_dict['values'] = filter_leader(new_batch_dict['values'], len(batch_dict['values']), repeat_idxs, num_blocks, required_mask)
+            if self.is_double_critic:
+                new_batch_dict['values1'] = filter_leader(new_batch_dict['values1'], len(batch_dict['values1']), repeat_idxs, num_blocks, required_mask)
+                new_batch_dict['values2'] = filter_leader(new_batch_dict['values2'], len(batch_dict['values2']), repeat_idxs, num_blocks, required_mask)
         
-        # reset obs and last obs in extras
-        extras['obs'][:,:, -self.intr_reward_coef_embd.shape[-1]:] = self.intr_reward_coef_embd
-        extras['last_obs']['obs'][:,-self.intr_reward_coef_embd.shape[-1]:] = self.intr_reward_coef_embd
         
-        """
-        # obsの最後の値を10飛ばしで出力
-        print("=======")
-        obses = new_batch_dict['obses'].cpu().detach().numpy()
-        print(obses.shape)
-        for i,obs in enumerate(obses):
-            if i % 100 == 0:
-                print(obs[-1], ":",obs[0])
-        """
+        if self.reduce_awac: 
+            for key in new_batch_dict.keys():
+                if isinstance(new_batch_dict[key], torch.Tensor): 
+                    new_batch_dict[key] = new_batch_dict[key][torch.logical_not(awac_mask)]
+                    
+                elif isinstance(new_batch_dict[key], list): 
+                    for i in range(len(new_batch_dict[key])):
+                        new_batch_dict[key][i] = new_batch_dict[key][i][:,torch.logical_not(awac_mask)[::self.horizon_length]]
        
-        
         return new_batch_dict
 
 
@@ -1307,14 +1477,16 @@ class DiscreteA2CBase(A2CBase):
             self.update_list += ['action_masks']
         self.tensor_list = self.update_list + ['obses', 'states', 'dones']
 
+
     def train_epoch(self):
         super().train_epoch()
 
         self.set_eval()
         play_time_start = time.time()
 
-        with torch.no_grad():
-            batch_dict = self.play_steps()
+        #with torch.no_grad():
+        #    batch_dict = self.play_steps()
+        batch_dict = self.play_steps()
         self.set_train()
 
         play_time_end = time.time()
@@ -1335,7 +1507,7 @@ class DiscreteA2CBase(A2CBase):
         for mini_ep in range(0, self.mini_epochs_num):
             ep_kls = []
             for i in range(len(self.dataset)):
-                # ロスの計算(アクター・クリティック)と学習(ログ用に取得)、dataset(1ミニバッチ分のデータ)がinput_dictに対応
+
                 a_loss, c_loss, entropy, kl, last_lr, lr_mul = self.train_actor_critic(self.dataset[i])
                 a_losses["total"].append(a_loss["total"])
                 a_losses["ppo"].append(a_loss["ppo"])
@@ -1364,7 +1536,7 @@ class DiscreteA2CBase(A2CBase):
 
         return batch_dict['step_time'], play_time, update_time, total_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul
 
-    def prepare_dataset(self, batch_dict): # 集めたデータをdatasetに格納
+    def prepare_dataset(self, batch_dict): 
         rnn_masks = batch_dict.get('rnn_masks', None)
         returns = batch_dict['returns']
         values = batch_dict['values']
@@ -1381,10 +1553,11 @@ class DiscreteA2CBase(A2CBase):
             values = self.value_mean_std(values)
             returns = self.value_mean_std(returns)
             self.value_mean_std.eval()
-        
+            
         advantages = torch.sum(advantages, axis=1)
+        
 
-        if self.normalize_advantage:
+        if self.normalize_advantage:            
             if self.is_rnn:
                 if self.normalize_rms_advantage:
                     advantages = self.advantage_mean_std(advantages, mask=rnn_masks)
@@ -1448,7 +1621,6 @@ class DiscreteA2CBase(A2CBase):
 
         while True:
             epoch_num = self.update_epoch()
-            # 環境のstep, データセットの更新, モデルの学習など
             step_time, play_time, update_time, sum_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
 
             # cleaning memory to optimize space
@@ -1551,7 +1723,7 @@ class DiscreteA2CBase(A2CBase):
             if should_exit:
                 return self.last_mean_rewards, epoch_num
 
-# trainはこちらで記述されている。
+
 class ContinuousA2CBase(A2CBase):
 
     def __init__(self, base_name, params):
@@ -1583,31 +1755,32 @@ class ContinuousA2CBase(A2CBase):
     def init_tensors(self):
         A2CBase.init_tensors(self)
         self.update_list = ['actions', 'neglogpacs', 'values', 'mus', 'sigmas']
+        if self.is_double_critic:
+            self.update_list += ['values1','values2']
+            
         self.tensor_list = self.update_list + ['obses', 'states', 'dones']
-
+        
     def train_epoch(self):
         super().train_epoch()
 
         self.set_eval()
         play_time_start = time.time()
         with torch.no_grad():
-            orig_batch_dict, ps_extras = self.play_steps() # 環境でデータを収集
+            orig_batch_dict, ps_extras = self.play_steps()
             
             
             if self.expl_type.startswith('mixed_expl') and self.use_others_experience != 'none':
-                if self.sapg2: # SAPG2用のデータ拡張
-                    batch_dict = self.augment_batch_for_sapg2(orig_batch_dict, ps_extras) # SAPG2ではリーダーデータのフォロワー埋め込み・リーダーデータのリーダー埋め込み・フォロワーデータのリーダー埋め込みに拡張する
-                else: # オリジナルのデータ拡張
+                if self.sapg2: 
+                    batch_dict = self.augment_batch_for_cpo(orig_batch_dict, ps_extras) 
+                else: 
                     batch_dict = self.augment_batch_for_mixed_expl(orig_batch_dict, ps_extras)
             else:
                 batch_dict = orig_batch_dict
             if self.expl_type.startswith('mixed_expl'):
-                # データセットをシャッフル
+                
                 batch_dict = shuffle_batch(batch_dict, self.seq_length)
             
                 
-        # batch_dict.keys()=dict_keys(['actions', 'neglogpacs', 'mus', 'sigmas', 'obses', 'off_policy_mask', 'dones', 'played_frames', 'rnn_states', 'step_time', 'returns', 'values'])
-        # originalのactionの次元は[4800, 23], 4800=horizon 16 x envs 300
         
         play_time_end = time.time()
         update_time_start = time.time()
@@ -1636,20 +1809,36 @@ class ContinuousA2CBase(A2CBase):
             'on_policy_grads' : [],
             'off_policy_grads' : [],
             'entropies' : [],
+            'mean_v' : [],
+            'mean_q' : [],
+            'mean_v_pred' : [],
             'mb_intr_rewards' : ps_extras['mb_intr_rewards'],
-            'mb_extr_rewards' :ps_extras['rewards']
+            'mb_extr_rewards' :ps_extras['rewards'],
         }
-
+        if self.use_ad_reward:
+            extra_infos["ad_reward_mean"] = ps_extras["ad_reward_mean"]
+            extra_infos["disc_loss_mean"] = ps_extras["disc_loss_mean"]
+        
+        if self.plot_kl:
+            kl_tensor_list = []
+            num_data_list = []
+            
         for mini_ep in range(0, self.mini_epochs_num):
             ep_kls = []
-            for i in range(len(self.dataset)):
-                # self.dataset[i]は1ミニバッチ分のデータがPPODataset.__getitem__から取得される。
-                #dict_keys(['old_values', 'old_logp_actions', 'advantages', 'returns', 'actions', 'obs', 'dones', 'rnn_masks', 'mu', 'sigma', 'off_policy_mask', 'rnn_states'])
+            for i in range(len(self.dataset)):    
+                
+                if self.plot_kl and mini_ep == 0:
+                    kl_tensor, num_data = self.calc_agents_kl(self.dataset[i])
+                    kl_tensor_list.append(kl_tensor)
+                    num_data_list.append(num_data)
+                
+                
                 a_loss, c_loss, entropy, kl, last_lr, lr_mul, cmu, csigma, b_loss, extras = self.train_actor_critic(self.dataset[i])
                 extra_infos['on_policy_contrib'].append(extras['on_policy_contrib'])
                 extra_infos['on_policy_grads'].append(extras['on_policy_grads'])
                 extra_infos['off_policy_contrib'].append(extras['off_policy_contrib'])
-                extra_infos['off_policy_grads'].append(extras['off_policy_grads'])
+                extra_infos['off_policy_grads'].append(extras['off_policy_grads'])                
+                
                 if 'entropies' in extras:
                     extra_infos['entropies'].append(extras['entropies'])
                 a_losses["total"].append(a_loss["total"])
@@ -1661,6 +1850,12 @@ class ContinuousA2CBase(A2CBase):
                 entropies.append(entropy)
                 if self.bounds_loss_coef is not None:
                     b_losses.append(b_loss)
+                    
+                if 'mean_v' in extras:
+                    extra_infos['mean_v'].append(extras['mean_v'])
+                    extra_infos['mean_q'].append(extras['mean_q'])
+                    extra_infos['mean_v_pred'].append(extras['mean_v_pred'])
+                    
 
                 self.dataset.update_mu_sigma(cmu, csigma)
                 if self.schedule_type == 'legacy':
@@ -1682,7 +1877,29 @@ class ContinuousA2CBase(A2CBase):
             kls.append(av_kls)
             self.diagnostics.mini_epoch(self, mini_ep)
             if self.normalize_input:
-                self.model.running_mean_std.eval() # don't need to update statstics more than one miniepoch
+                self.model.running_mean_std.eval() 
+
+        if self.plot_kl:
+            kl_tensor = torch.stack(kl_tensor_list)
+            num_data = torch.tensor(num_data_list)
+            
+            kl_tensor = torch.sum(kl_tensor * num_data.unsqueeze(1).unsqueeze(2).to(self.ppo_device), dim=0) / torch.sum(num_data, dim=0)
+            
+            print("KL distance", kl_tensor)
+            
+            
+            if os.path.exists(self.kl_path):
+                pass
+            kl_flat = kl_tensor.view(-1).cpu().numpy()
+            row = pd.DataFrame([list(kl_flat)])
+            row.to_csv(
+                self.kl_path,
+                mode="a",
+                index=False,
+                header= (not (os.path.exists(self.kl_path)))
+            )
+            
+    
 
         update_time_end = time.time()
         play_time = play_time_end - play_time_start
@@ -1695,6 +1912,7 @@ class ContinuousA2CBase(A2CBase):
         return batch_dict['step_time'], play_time, update_time, total_time, a_losses, c_losses, b_losses, entropies, kls, last_lr, lr_mul, extra_infos
 
     def prepare_dataset(self, batch_dict, train_value_mean_std=True):
+        
         obses = batch_dict['obses']
         returns = batch_dict['returns']
         dones = batch_dict['dones']
@@ -1705,18 +1923,30 @@ class ContinuousA2CBase(A2CBase):
         sigmas = batch_dict['sigmas']
         rnn_states = batch_dict.get('rnn_states', None)
         rnn_masks = batch_dict.get('rnn_masks', None)
+        
+        if self.is_double_critic:
+            values1 = batch_dict['values1']
+            values2 = batch_dict['values2']
 
         advantages = returns - values
-
+        
         if self.normalize_value:
             if train_value_mean_std:
                 self.value_mean_std.train()
+                
             values = self.value_mean_std(values)
+            
+            if self.is_double_critic: 
+                self.value_mean_std.eval()
+                values1 = self.value_mean_std(values1)
+                values2 = self.value_mean_std(values2)
+                self.value_mean_std.train()    
+            
             returns = self.value_mean_std(returns)
             self.value_mean_std.eval()
-
+            
         advantages = torch.sum(advantages, axis=1)
-
+        
         if self.normalize_advantage:
             if self.is_rnn:
                 if self.normalize_rms_advantage:
@@ -1733,6 +1963,7 @@ class ContinuousA2CBase(A2CBase):
                     else:
                         mean, std = advantages.mean(), advantages.std()
                     advantages = (advantages - mean) / (std + 1e-8)
+                    
 
         dataset_dict = {}
         dataset_dict['old_values'] = values
@@ -1751,6 +1982,10 @@ class ContinuousA2CBase(A2CBase):
         dataset_dict['leader_online_mask'] = batch_dict.get('leader_online_mask', None)
         dataset_dict['follower_online_mask'] = batch_dict.get('follower_online_mask', None)
         
+        if self.is_double_critic:
+            dataset_dict["old_values1"] = values1
+            dataset_dict["old_values2"] = values2
+        
 
         self.dataset.update_values_dict(dataset_dict)
 
@@ -1763,8 +1998,14 @@ class ContinuousA2CBase(A2CBase):
             dataset_dict['obs'] = batch_dict['states']
             dataset_dict['dones'] = dones
             dataset_dict['rnn_masks'] = rnn_masks
+            if self.is_double_critic:
+                dataset_dict['old_values1'] = values1
+                dataset_dict['old_values2'] = values2
             self.central_value_net.update_dataset(dataset_dict)
-
+            
+            
+            
+     
     def train(self):
         self.init_tensors()
         start_time = time.time()
@@ -1836,7 +2077,7 @@ class ContinuousA2CBase(A2CBase):
                     self.mean_rewards = mean_rewards[0]
 
                     for i in range(self.value_size):
-                        # rewardsを記録
+                        
                         rewards_name = 'rewards' if i == 0 else 'rewards{0}'.format(i)
                         self.writer.add_scalar(rewards_name + '/step'.format(i), mean_rewards[i], frame)
                         self.writer.add_scalar(rewards_name + '/iter'.format(i), mean_rewards[i], frame)
@@ -1848,6 +2089,19 @@ class ContinuousA2CBase(A2CBase):
                     self.writer.add_scalar('episode_lengths/step', mean_lengths, frame)
                     self.writer.add_scalar('episode_lengths/iter', mean_lengths, frame)
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, frame)
+                    
+                    
+                    if self.use_ad_reward:
+                        self.writer.add_scalar('adversarial/ad_rew_per_envstep', np.array(extra_infos['ad_reward_mean']), frame)
+                        self.writer.add_scalar('adversarial/disc_loss', np.array(extra_infos['disc_loss_mean']), frame)
+                
+                    
+                    if 'mean_v' in extra_infos:
+                        self.writer.add_scalar('values/critic_v', np.array(extra_infos['mean_v']).mean(), frame)
+                        self.writer.add_scalar('values/critic_q', np.array(extra_infos['mean_q']).mean(), frame)
+                        self.writer.add_scalar('values/critic_v_pred', np.array(extra_infos['mean_v_pred']).mean(), frame)
+                        self.writer.add_scalar('values/critic_advantage', (np.array(extra_infos['mean_q']) - np.array(extra_infos['mean_v'])).mean(), frame)
+                        self.writer.add_scalar('values/critic_v_error', (np.array(extra_infos['mean_v']) - np.array(extra_infos['mean_v_pred'])).mean(), frame)
 
                     self.writer.add_histogram('auxiliary_stats/off_policy_contrib', np.array(extra_infos['off_policy_contrib']), frame)
                     self.writer.add_histogram('auxiliary_stats/on_policy_contrib', np.array(extra_infos['on_policy_contrib']), frame)
@@ -1876,7 +2130,7 @@ class ContinuousA2CBase(A2CBase):
                     checkpoint_name = self.config['name'] + '_ep_' + str(epoch_num) + '_rew_' + str(mean_rewards[0])
 
                     if self.save_freq > 0:
-                        if int(math.sqrt(epoch_num // self.save_freq)) ** 2 == epoch_num // self.save_freq and epoch_num % self.save_freq == 0:
+                        if epoch_num % self.save_freq == 0: #if int(math.sqrt(epoch_num // self.save_freq)) ** 2 == epoch_num // self.save_freq and epoch_num % self.save_freq == 0:
                             self.save(os.path.join(self.nn_dir, 'last_' + checkpoint_name), all_state_dict)
                         if epoch_num % 200 == 0:    
                             torch_ext.safe_filesystem_op(os.makedirs, os.path.join(self.experiment_dir, 'last'), exist_ok=True)

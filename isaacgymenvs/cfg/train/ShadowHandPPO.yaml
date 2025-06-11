@@ -10,6 +10,7 @@ params:
   network:
     name: actor_critic
     separate: False
+    double_critic: False 
 
     space:
       continuous:
@@ -45,6 +46,32 @@ params:
     normalize_input: True
     normalize_value: True
     value_bootstrap: True
+
+    # SAPG2を有効にする
+    sapg2: True
+    vanilla_sapg: False 
+    lambda_awac : 0.2
+    lambda_ppo: 0
+    awac_max: 100
+    awac_alpha: 1 
+    awac_beta: 0 
+    awac_gamma: 1 
+    enable_w: False 
+    save_batch: False 
+    off_policy_ceb: True 
+    double_critic: ${..network.double_critic}
+    scheduler_kl_data: no_awac 
+    reduce_awac: False 
+    plot_kl: False 
+
+    
+    use_ad_reward: True
+    ad_reward_type: "sa" # 'sa', 's', 'a'
+    discriminator_config: 
+      units: [1024, 1024, 512, 512]
+      activation: elu
+    ad_reward_coef: 0
+
     num_actors: ${....task.env.numEnvs}
     reward_shaper:
       scale_value: 0.01
@@ -56,7 +83,7 @@ params:
     schedule_type: standard
     kl_threshold: 0.016
     score_to_win: 100000
-    max_epochs: ${resolve_default:500000,${....max_iterations}}
+    max_epochs: 104000 #${resolve_default:500000,${....max_iterations}}
     save_best_after: 100
     save_frequency: 3000
     print_stats: True

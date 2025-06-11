@@ -8,20 +8,58 @@ def critic_loss(model, value_preds_batch, values, curr_e_clip, return_batch, cli
     #return model.get_value_layer().loss(value_preds_batch=value_preds_batch, values=values, curr_e_clip=curr_e_clip, return_batch=return_batch, clip_value=clip_value)
 
 
-def critic_loss_sapg2(model, value_preds_batch, values, curr_e_clip, return_batch, clip_value, critic_mask, off_policy_mask, enable_w):
-    c_loss = default_critic_loss(value_preds_batch, values, curr_e_clip, return_batch, clip_value)
-    # critic_maskをかけてから、大きさを正規化する
+def critic_loss_sapg2_double_critic(model, value_preds_batch, value_preds_batch1, value_preds_batch2, values, values1, values2, curr_e_clip, return_batch, clip_value, critic_mask, off_policy_mask, enable_w):
+    
+    c_loss1 = default_critic_loss(value_preds_batch1, values1, curr_e_clip, return_batch, clip_value)
+    c_loss2 = default_critic_loss(value_preds_batch2, values2, curr_e_clip, return_batch, clip_value)
+    c_loss = c_loss1 + c_loss2
+    
+    
     mask = critic_mask.unsqueeze(1)
     assert mask.shape == c_loss.shape, "mask shape is {}, c_loss shape is {}".format(mask.shape, c_loss.shape)
     
     c_loss_masked = c_loss * mask
     
-    # 使うデータの割合で正規化
-    if enable_w:
-        w = mask.count_nonzero().item()/c_loss.shape[0]
-        c_loss_masked = c_loss_masked / w
     
-    return c_loss_masked
+    if enable_w:
+        w = mask.count_nonzero().item()/c_loss.shape[0] 
+        c_loss_masked = c_loss_masked / w 
+    
+    
+    masked_values = values * mask
+    masked_value_preds = value_preds_batch * mask
+    masked_returns = return_batch * mask
+    num_valid = mask.sum()
+    mean_v = masked_values.sum() / (num_valid + 1e-8)
+    mean_v_pred = masked_value_preds.sum() / (num_valid + 1e-8)
+    mean_q = masked_returns.sum() / (num_valid + 1e-8)
+    
+    return c_loss_masked, mean_v.detach().cpu().numpy(), mean_q.detach().cpu().numpy(), mean_v_pred.detach().cpu().numpy()
+    
+
+def critic_loss_sapg2(model, value_preds_batch, values, curr_e_clip, return_batch, clip_value, critic_mask, off_policy_mask, enable_w):
+    c_loss = default_critic_loss(value_preds_batch, values, curr_e_clip, return_batch, clip_value)
+    
+    mask = critic_mask.unsqueeze(1)
+    assert mask.shape == c_loss.shape, "mask shape is {}, c_loss shape is {}".format(mask.shape, c_loss.shape)
+    
+    c_loss_masked = c_loss * mask
+    
+    
+    if enable_w:
+        w = mask.count_nonzero().item()/c_loss.shape[0] 
+        c_loss_masked = c_loss_masked / w 
+    
+    
+    masked_values = values * mask
+    masked_value_preds = value_preds_batch * mask
+    masked_returns = return_batch * mask
+    num_valid = mask.sum()
+    mean_v = masked_values.sum() / (num_valid + 1e-8)
+    mean_v_pred = masked_value_preds.sum() / (num_valid + 1e-8)
+    mean_q = masked_returns.sum() / (num_valid + 1e-8)
+    
+    return c_loss_masked, mean_v.detach().cpu().numpy(), mean_q.detach().cpu().numpy(), mean_v_pred.detach().cpu().numpy()
 
 
 def critic_loss_sapg(model, value_preds_batch, values, curr_e_clip, return_batch, clip_value, critic_mask, off_policy_mask, enable_w):
@@ -32,12 +70,21 @@ def critic_loss_sapg(model, value_preds_batch, values, curr_e_clip, return_batch
     assert mask.shape == c_loss.shape, "mask shape is {}, c_loss shape is {}".format(mask.shape, c_loss.shape)
     c_loss_masked = c_loss * mask
     
-    # 使うデータの割合で正規化
-    if enable_w:
-        w = mask.count_nonzero().item()/c_loss.shape[0]
-        c_loss_masked = c_loss_masked / w
     
-    return c_loss_masked
+    if enable_w:
+        w = mask.count_nonzero().item()/c_loss.shape[0] 
+        c_loss_masked = c_loss_masked / w 
+    
+    
+    masked_values = values * mask
+    masked_value_preds = value_preds_batch * mask
+    masked_returns = return_batch * mask
+    num_valid = mask.sum()
+    mean_v = masked_values.sum() / (num_valid + 1e-8)
+    mean_v_pred = masked_value_preds.sum() / (num_valid + 1e-8)
+    mean_q = masked_returns.sum() / (num_valid + 1e-8)
+    
+    return c_loss_masked, mean_v, mean_q, mean_v_pred
 
   
 
@@ -60,7 +107,7 @@ def smooth_clamp(x, mi, mx):
 
 def smoothed_actor_loss(old_action_neglog_probs_batch, action_neglog_probs, advantage, is_ppo, curr_e_clip):
     if is_ppo:
-        ratio = torch.exp(old_action_neglog_probs_batch - action_neglog_probs) # pnew/poldの計算
+        ratio = torch.exp(old_action_neglog_probs_batch - action_neglog_probs) 
         surr1 = advantage * ratio
         surr2 = advantage * smooth_clamp(ratio, 1.0 - curr_e_clip,
                                 1.0 + curr_e_clip)
@@ -80,70 +127,62 @@ def actor_loss(old_action_neglog_probs_batch, action_neglog_probs, advantage, is
         a_loss = (action_neglog_probs * advantage)
     return a_loss
 
-def actor_loss_with_awac(old_action_neglog_probs_batch, action_neglog_probs, leader_action_log_probs, advantage, is_ppo, curr_e_clip, off_policy_mask, awac_mask, leader_online_mask, follower_online_mask, awac_lambda, awac_max, awac_alpha, awac_beta, awac_gamma, critic_mask, enable_w):
+# LOSS for CPO
+def actor_loss_cpo(old_action_neglog_probs_batch, action_neglog_probs, leader_action_log_probs, advantage, is_ppo, curr_e_clip, off_policy_mask, awac_mask, leader_online_mask, follower_online_mask, lambda_awac, lambda_ppo, awac_max, awac_alpha, awac_beta, awac_gamma, critic_mask, enable_w):
     """
-    # 1. leader_online_mask(リーダーのオンライン学習), off_policy_mask(リーダーのオンライン学習)のデータはPPOで学習する。
+    # PPO Loss
     """
     if is_ppo:
         ratio = torch.exp(old_action_neglog_probs_batch - action_neglog_probs)
         surr1 = advantage * ratio
         surr2 = advantage * torch.clamp(ratio, 1.0 - curr_e_clip, 1.0 + curr_e_clip)
-        ppo_loss = torch.max(-surr1, -surr2)
-        # awac maskでマスキングする
+        ppo_loss = torch.max(-surr1, -surr2) 
     else:
         ppo_loss = (action_neglog_probs * advantage)
-        print("??????????? not PPO ????????????")
         
     ppo_loss = ppo_loss * torch.logical_or(leader_online_mask, off_policy_mask)
     
+    """
+    # AWAC Loss
+    """
     
-    """
-    # 2. awac_mask(フォロワーのオフライン学習)のデータはAWACで学習する。
-    """
-    # AWACロスの計算(expが爆発するのでadvantageをクリップする)
-    offline_awac_loss = -torch.clamp(torch.exp(1/awac_lambda * advantage), max=awac_max)*(-action_neglog_probs)
+    offline_awac_loss = - torch.clamp(torch.exp(advantage / lambda_awac), max=awac_max)*(-action_neglog_probs) 
     offline_awac_loss = offline_awac_loss * awac_mask 
     
     
     """
-    # 3. follower_online_mask(フォロワーのオンライン学習)のデータは、KL拘束付きのPPOで学習する。
+    # PPO Loss with KL
     """
     ratio = torch.exp(old_action_neglog_probs_batch - action_neglog_probs)
-    surr1 = (-(leader_action_log_probs - action_neglog_probs) + 1/awac_lambda * advantage) *ratio 
-    surr2 = (-(leader_action_log_probs - action_neglog_probs) + 1/awac_lambda * advantage) * torch.clamp(ratio, 1.0 - curr_e_clip, 1.0 + curr_e_clip)
-    online_awac_loss = torch.max(-surr1, -surr2)
+    surr1 = (-(leader_action_log_probs - action_neglog_probs)*lambda_ppo + advantage) *ratio 
+    surr2 = (-(leader_action_log_probs - action_neglog_probs)*lambda_ppo + advantage) * torch.clamp(ratio, 1.0 - curr_e_clip, 1.0 + curr_e_clip) 
+    online_awac_loss = torch.max(-surr1, -surr2) 
     online_awac_loss = online_awac_loss * follower_online_mask
+
+    """
     
     """
-    # 4. 各ロスのバランスを取って、最終的なロスを計算する。
-    """
-    # スケーリング
+    if enable_w:
+        ppo_klppo_mask = torch.logical_or(leader_online_mask, follower_online_mask)
+        ppo_klppo_mask = torch.logical_or(ppo_klppo_mask, off_policy_mask)
+        w = (ppo_klppo_mask.numel() / ppo_klppo_mask.sum()).detach()
+        ppo_loss = ppo_loss * w
+        online_awac_loss = online_awac_loss * w
+        
+    
     ppo_loss = awac_alpha * ppo_loss
     offline_awac_loss = awac_beta * offline_awac_loss
     online_awac_loss = awac_gamma * online_awac_loss
     
-    # 合計ロス
+    
+    
     a_loss = ppo_loss + offline_awac_loss + online_awac_loss
     
     a_loss_info = {
-        "ppo": ppo_loss.abs().mean(), 
-        "awac": offline_awac_loss.abs().mean(), 
-        "klppo": online_awac_loss.abs().mean()
+        "ppo": ppo_loss.mean(), 
+        "awac": offline_awac_loss.mean(),
+        "klppo": online_awac_loss.mean()
         }
-
-    print("--- LOSS INFO ---")
-    print("ppo_loss: {}".format(ppo_loss.abs().mean()))
-    print("offline_awac_loss: {}".format(offline_awac_loss.abs().mean()))
-    print("online_awac_loss: {}".format(online_awac_loss.abs().mean()))
-    
-    
-    # 使ったデータの割合で正規化
-    if enable_w:
-        num_used = leader_online_mask.count_nonzero().item() + off_policy_mask.count_nonzero().item() + awac_mask.count_nonzero().item() + follower_online_mask.count_nonzero().item()
-        num_data = advantage.shape[0]
-        w = num_used / num_data
-        a_loss = a_loss / w
-        print("w is {}".format(w))
     
      
     return a_loss, a_loss_info
@@ -151,7 +190,7 @@ def actor_loss_with_awac(old_action_neglog_probs_batch, action_neglog_probs, lea
 
 
 def actor_loss_sapg(old_action_neglog_probs_batch, action_neglog_probs, advantage, is_ppo, curr_e_clip, off_policy_mask, awac_mask, awac_lambda, awac_max, awac_alpha, critic_mask, enable_w):
-    # PPOロスを計算
+    
     if is_ppo:
         ratio = torch.exp(old_action_neglog_probs_batch - action_neglog_probs)
         surr1 = advantage * ratio
@@ -160,18 +199,16 @@ def actor_loss_sapg(old_action_neglog_probs_batch, action_neglog_probs, advantag
     else:
         ppo_loss = (action_neglog_probs * advantage)
     
-    # critic_mask or off_policy_maskのデータのみを使う。
+    
     mask = torch.logical_or(critic_mask, off_policy_mask)
     
     assert mask.shape == ppo_loss.shape, "mask shape is {}, ppo_loss shape is {}".format(mask.shape, ppo_loss.shape)
     a_loss = ppo_loss * mask 
     
     if enable_w:
-        w = mask.count_nonzero().item()/mask.shape[0]
+        w = mask.count_nonzero().item()/mask.shape[0] 
         a_loss = a_loss / w
 
-    
-    print("==========PPO loss is used for critic_mask or off_policy_mask data, for debug.===============")
     
     return a_loss
 
