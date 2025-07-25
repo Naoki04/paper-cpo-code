@@ -55,7 +55,7 @@ params:
     lr_schedule: adaptive
     kl_threshold: 0.008
     score_to_win: 40000
-    max_epochs: 52000 #${resolve_default:100000,${....max_iterations}}
+    max_epochs: 26000 #${resolve_default:100000,${....max_iterations}}
     save_best_after: 200
     save_frequency: 5200 #3000
     print_stats: True

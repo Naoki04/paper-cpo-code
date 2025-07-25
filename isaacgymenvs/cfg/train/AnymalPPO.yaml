@@ -96,7 +96,7 @@ params:
     use_others_experience: 'none' # 'none', 'all', 'lead_foll'
     off_policy_ratio: 1.0
 
-    max_epochs: 52000 #${resolve_default:1000,${....max_iterations}}
+    max_epochs: 13000 #${resolve_default:1000,${....max_iterations}}
     save_best_after: 200
     score_to_win: 20000
     save_frequency: 5200 #50
