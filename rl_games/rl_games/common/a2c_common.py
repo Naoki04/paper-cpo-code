@@ -296,9 +296,12 @@ class A2CBase(BaseAlgorithm):
         self.scheduler_kl_data = self.config.get('scheduler_kl_data', False)
         self.reduce_awac = self.config.get('reduce_awac', False)
         self.plot_kl = self.config.get('plot_kl', False)
+        self.plot_ratio = self.config.get('plot_ratio', False)
         
         if self.plot_kl:
             self.kl_path = os.path.join(self.train_dir, "kl_dists.csv")
+        if self.plot_ratio:
+            self.ratio_path = os.path.join(self.train_dir, "importance_ratios.csv")
         
         
         if self.use_smooth_clamp:
@@ -1826,7 +1829,12 @@ class ContinuousA2CBase(A2CBase):
         
         if self.plot_kl:
             kl_tensor_list = []
-            num_data_list = []
+            kl_num_data_list = []
+        
+        if self.plot_ratio:
+            ratio_tensor_list = []
+            ratio_num_data_list = []
+            
             
         for mini_ep in range(0, self.mini_epochs_num):
             ep_kls = []
@@ -1835,7 +1843,12 @@ class ContinuousA2CBase(A2CBase):
                 if self.plot_kl and mini_ep == 0:
                     kl_tensor, num_data = self.calc_agents_kl(self.dataset[i])
                     kl_tensor_list.append(kl_tensor)
-                    num_data_list.append(num_data)
+                    kl_num_data_list.append(num_data)
+                    
+                if self.plot_ratio and mini_ep == 0:
+                    ratio_tensor, num_data = self.calc_importance_ratio(self.dataset[i])
+                    ratio_tensor_list.append(ratio_tensor)
+                    ratio_num_data_list.append(num_data)
                 
                 
                 a_loss, c_loss, entropy, kl, last_lr, lr_mul, cmu, csigma, b_loss, extras = self.train_actor_critic(self.dataset[i])
@@ -1886,12 +1899,10 @@ class ContinuousA2CBase(A2CBase):
 
         if self.plot_kl:
             kl_tensor = torch.stack(kl_tensor_list)
-            num_data = torch.tensor(num_data_list)
-            
-            kl_tensor = torch.sum(kl_tensor * num_data.unsqueeze(1).unsqueeze(2).to(self.ppo_device), dim=0) / torch.sum(num_data, dim=0)
+            kl_num_data = torch.tensor(kl_num_data_list)
+            kl_tensor = torch.sum(kl_tensor * kl_num_data.unsqueeze(1).unsqueeze(2).to(self.ppo_device), dim=0) / torch.sum(kl_num_data, dim=0)
             
             print("KL distance", kl_tensor)
-            
             
             if os.path.exists(self.kl_path):
                 pass
@@ -1903,9 +1914,28 @@ class ContinuousA2CBase(A2CBase):
                 index=False,
                 header= (not (os.path.exists(self.kl_path)))
             )
+        
+        if self.plot_ratio:
+            ratio_tensor = torch.stack(ratio_tensor_list)
+            ratio_num_data = torch.stack(ratio_num_data_list)
             
-    
+            numerator = torch.sum(ratio_tensor * ratio_num_data, dim=0)            # [N, N]
+            denominator = torch.sum(ratio_num_data, dim=0).clamp(min=1e-6)         # avoid division by zero
+            ratio_mean = numerator / denominator
 
+            print("Importance ratio", ratio_mean)
+
+            if os.path.exists(self.ratio_path):
+                pass
+            
+            row = pd.DataFrame([list(ratio_mean.cpu().numpy())])
+            row.to_csv(
+                self.ratio_path,
+                mode="a",
+                index=False,
+                header= (not (os.path.exists(self.ratio_path)))
+            )
+            
         update_time_end = time.time()
         play_time = play_time_end - play_time_start
         update_time = update_time_end - update_time_start
