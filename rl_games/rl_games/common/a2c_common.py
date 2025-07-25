@@ -1068,7 +1068,9 @@ class A2CBase(BaseAlgorithm):
                 # generate class label
                 step_per_block = pure_obs_flat.shape[0] // (self.num_actors // self.intr_coef_block_size) 
                 y_label = torch.arange(self.num_actors // self.intr_coef_block_size, device=self.ppo_device).flip(0).repeat_interleave(step_per_block).long()
-
+                # set adversarial reward 0 for the leader
+                followers_mask = (y_label != 0)
+                
                 # generate input for discriminator
                 if self.ad_reward_type == "s":
                     disc_input = pure_obs_flat
@@ -1077,17 +1079,20 @@ class A2CBase(BaseAlgorithm):
                 elif self.ad_reward_type == "sa":
                     disc_input = torch.cat([pure_obs_flat, actions_flat], dim=1)
                 
+                # extract only followers' data
+                disc_input = disc_input[followers_mask]
+                y_label = y_label[followers_mask] - 1 # shift label to start from 0
+                
                 # calculate discriminator loss
                 y_pred = self.discriminator(disc_input)
-                disc_loss_array = self.disc_loss_func(y_pred, y_label) 
                 
+                disc_loss_array = self.disc_loss_func(y_pred, y_label) 
                 """
                 # adversarial reward calculation
                 """
-                # set adversarial reward 0 for the leader
-                followers_mask = (y_label != 0)
                 
-                ad_rewards = - disc_loss_array * self.ad_reward_coef * followers_mask # loss to reward
+                ad_rewards = torch.zeros_like(followers_mask, dtype=torch.float, device=self.ppo_device)
+                ad_rewards[followers_mask] = - disc_loss_array * self.ad_reward_coef  # loss to reward
                 ad_rewards = ad_rewards.view(self.horizon_length, -1, 1)
                 
                 # recalculate return
@@ -1101,6 +1106,7 @@ class A2CBase(BaseAlgorithm):
                 
                 extras["ad_reward_mean"] = ad_rewards.mean().item()*(followers_mask.sum().item()/ad_rewards.shape[1])
                 extras["disc_loss_mean"] = disc_loss_array.mean().item()
+                
             
             # Train discriminator
             with torch.enable_grad():  
@@ -1121,7 +1127,6 @@ class A2CBase(BaseAlgorithm):
                     disc_loss.backward()
                     self.disc_optimizer.step()
                     
-            
         
         return batch_dict, extras
     
