@@ -518,29 +518,35 @@ class ModelSACContinuous(BaseModel):
 
 
 
+import torch
+import torch.nn as nn
+
 class Discriminator(nn.Module):
     def __init__(self, input_shape, hidden_dim, num_agents, activation_name):
         super(Discriminator, self).__init__()
-        self.fc1 = nn.Linear(input_shape, hidden_dim[0])
-        self.fc2 = nn.Linear(hidden_dim[0], hidden_dim[1])
-        self.fc3 = nn.Linear(hidden_dim[1], hidden_dim[2])  
-        self.fc4 = nn.Linear(hidden_dim[2], hidden_dim[3])
-        self.fc5 = nn.Linear(hidden_dim[3], num_agents)
-        self.softmax = nn.Softmax(dim=1)
-        
+
+        # activation function
         if activation_name == 'relu':
-            self.activation = torch.nn.ReLU()
+            self.activation = nn.ReLU()
         elif activation_name == 'elu':
-            self.activation = torch.nn.ELU()
+            self.activation = nn.ELU()
         else:
             raise ValueError('Not implemented activation function')
-        
+
+        # build hidden layers
+        self.layers = nn.ModuleList()
+        in_dim = input_shape
+        for out_dim in hidden_dim:
+            self.layers.append(nn.Linear(in_dim, out_dim))
+            in_dim = out_dim
+
+        # output layer
+        self.output_layer = nn.Linear(in_dim, num_agents)
+        self.softmax = nn.Softmax(dim=1)
+
     def forward(self, x):
-        x = self.activation(self.fc1(x))
-        x = self.activation(self.fc2(x))
-        x = self.activation(self.fc3(x))
-        x = self.activation(self.fc4(x))
-        x = self.fc5(x)
+        for layer in self.layers:
+            x = self.activation(layer(x))
+        x = self.output_layer(x)
         y = self.softmax(x)
-        
         return y

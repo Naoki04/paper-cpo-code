@@ -10,6 +10,7 @@ params:
   network:
     name: actor_critic
     separate: False
+    double_critic: False 
 
     space:
       continuous:
@@ -23,7 +24,7 @@ params:
         fixed_sigma: True
 
     mlp:
-      units: [400, 200, 100]
+      units: [768, 512, 256]
       activation: elu
       d2rl: False
 
@@ -54,22 +55,47 @@ params:
     lr_schedule: adaptive
     kl_threshold: 0.008
     score_to_win: 40000
-    max_epochs: ${resolve_default:100000,${....max_iterations}}
+    max_epochs: 52000 #${resolve_default:100000,${....max_iterations}}
     save_best_after: 200
-    save_frequency: 3000
+    save_frequency: 5200 #3000
     print_stats: True
     grad_norm: 1.0
     entropy_coef: 0.0
     truncate_grads: True
     ppo: True
     e_clip: 0.2
-    horizon_length: 32
+    horizon_length: 16 #32
     minibatch_size: 32768
     mini_epochs: 5
     critic_coef: 4
     clip_value: True
     seq_len: 4
     bounds_loss_coef: 0.0001
+
+    sapg2: True
+    vanilla_sapg: False 
+    lambda_awac : 0.2
+    lambda_ppo: 0
+    awac_max: 100
+    awac_alpha: 1 
+    awac_beta: 0 
+    awac_gamma: 1 
+    enable_w: False 
+    save_batch: False 
+    off_policy_ceb: True 
+    double_critic: ${..network.double_critic}
+    scheduler_kl_data: no_awac 
+    reduce_awac: False 
+    plot_kl: False 
+
+    
+    use_ad_reward: True
+    ad_reward_type: "sa" # 'sa', 's', 'a'
+    discriminator_config: 
+      units: [768, 512, 256]
+      activation: elu
+    ad_reward_coef: 0
+
 
     good_reset_boundary: ${if:${....task.env.goodResetBoundary},${....task.env.goodResetBoundary},0}
     use_others_experience: 'none' # 'none', 'all', 'lead_foll'
