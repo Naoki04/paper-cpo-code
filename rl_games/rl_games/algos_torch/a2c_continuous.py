@@ -407,10 +407,10 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             with torch.no_grad():
                 # get actions and obs from online data.
                 online_mask = torch.logical_or(input_dict['leader_online_mask'], input_dict['follower_online_mask'])
-                actions_batch = input_dict['actions'][online_mask]
-                obs_batch = input_dict['obs'][online_mask]
+                actions_batch = input_dict['actions']
+                obs_batch = input_dict['obs']
                 obs_batch = self._preproc_obs(obs_batch)
-                behavior_action_log_probs = input_dict['old_logp_actions'][online_mask]
+                behavior_action_log_probs = input_dict['old_logp_actions']
                 
                 batch_dict = {
                     'is_train': True,
@@ -419,8 +419,8 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 }
                 rnn_masks = None
                 if self.is_rnn:
-                    rnn_masks = input_dict['rnn_masks'][online_mask]
-                    batch_dict['rnn_states'] = input_dict['rnn_states'][online_mask]
+                    rnn_masks = input_dict['rnn_masks']
+                    batch_dict['rnn_states'] = input_dict['rnn_states']
                     batch_dict['seq_length'] = self.seq_length
 
                     if self.zero_rnn_on_done:
@@ -441,13 +441,14 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 for agent_embedding in embedding_list:
                     # extact data with the same embedding from batch_dict.
                     policy_mask = (obs_batch[:,-self.intr_reward_coef_embd.shape[-1]:] == agent_embedding).squeeze(-1)
-                    if not policy_mask.any():
+                    combined_mask = torch.logical_and(online_mask, policy_mask)
+                    if not combined_mask.any():
                         ratio_list.append(torch.tensor([1.0]))
                         num_data_list.append(0)
                     else:                        
-                        ratio = torch.exp(behavior_action_log_probs[policy_mask] - leader_action_log_probs[policy_mask]).mean()
+                        ratio = torch.exp(behavior_action_log_probs - leader_action_log_probs)[combined_mask].mean()
                         ratio_list.append(ratio)
-                        num_data_list.append(policy_mask.sum().item())
+                        num_data_list.append(combined_mask.sum().item())
             ratio_tensor = torch.stack(ratio_list, dim=0)  # shape: [num_agents, num_data]
             num_data = torch.tensor(num_data_list, device=self.ppo_device)  # shape: [num_agents]
             
