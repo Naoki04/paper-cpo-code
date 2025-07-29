@@ -436,7 +436,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 
                 # calc importance ratio for each behavior policy.
                 ratio_list = []
-                num_data_list = []
+                
                 embedding_list = self.intr_reward_coef_embd[::self.intr_coef_block_size,0].reshape(-1,1) # [[emb0], [emb1], ...]
                 for agent_embedding in embedding_list:
                     # extact data with the same embedding from batch_dict.
@@ -444,16 +444,22 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                     combined_mask = torch.logical_and(online_mask, policy_mask)
                     if not combined_mask.any():
                         ratio_list.append(torch.tensor([1.0]))
-                        num_data_list.append(0)
                     else:                        
-                        ratio = torch.exp(behavior_action_log_probs - leader_action_log_probs)[combined_mask].mean()
+                        ratio = torch.exp(behavior_action_log_probs - leader_action_log_probs)[combined_mask]
                         ratio_list.append(ratio)
-                        num_data_list.append(combined_mask.sum().item())
-            ratio_tensor = torch.stack(ratio_list, dim=0)  # shape: [num_agents, num_data]
-            num_data = torch.tensor(num_data_list, device=self.ppo_device)  # shape: [num_agents]
-            
-        return ratio_tensor, num_data
-            
+                    
+        return ratio_list
+    
+    def compute_relative_ess(self, ratios: torch.Tensor) -> float:
+        N = ratios.numel()
+        if N == 0:
+            return 0.0
+
+        weights = ratios / (ratios.sum() + 1e-8)  # normalize
+        ess = 1.0 / (torch.sum(weights ** 2) + 1e-8)
+        relative_ess = ess / (N)
+
+        return relative_ess.item()
 
     def train_actor_critic(self, input_dict):
         self.calc_gradients(input_dict)
