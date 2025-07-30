@@ -303,7 +303,7 @@ class A2CBase(BaseAlgorithm):
         if self.plot_ratio:
             self.ratio_path = os.path.join(self.train_dir, "importance_ratios.csv")
             self.agent_relative_ess_path = os.path.join(self.train_dir, "agent_ess.csv")
-            self.overall_relative_ess_path = os.path.join(self.train_dir, "overall_ess_path.csv")
+            self.overall_relative_ess_path = os.path.join(self.train_dir, "overall_ess.csv")
 
 
         if self.use_smooth_clamp:
