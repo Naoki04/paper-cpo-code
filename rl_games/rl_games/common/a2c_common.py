@@ -1927,7 +1927,7 @@ class ContinuousA2CBase(A2CBase):
             if os.path.exists(self.ratio_path):
                 pass
             
-            row = pd.DataFrame(ratio_mean)
+            row = pd.DataFrame([ratio_mean])
             row.to_csv(
                 self.ratio_path,
                 mode="a",
