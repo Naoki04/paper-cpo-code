@@ -296,11 +296,16 @@ class A2CBase(BaseAlgorithm):
         self.scheduler_kl_data = self.config.get('scheduler_kl_data', False)
         self.reduce_awac = self.config.get('reduce_awac', False)
         self.plot_kl = self.config.get('plot_kl', False)
+        self.plot_ratio = self.config.get('plot_ratio', False)
         
         if self.plot_kl:
             self.kl_path = os.path.join(self.train_dir, "kl_dists.csv")
-        
-        
+        if self.plot_ratio:
+            self.ratio_path = os.path.join(self.train_dir, "importance_ratios.csv")
+            self.agent_relative_ess_path = os.path.join(self.train_dir, "agent_ess.csv")
+            self.overall_relative_ess_path = os.path.join(self.train_dir, "overall_ess.csv")
+
+
         if self.use_smooth_clamp:
             self.actor_loss_func = common_losses.smoothed_actor_loss
         else:
@@ -1826,7 +1831,12 @@ class ContinuousA2CBase(A2CBase):
         
         if self.plot_kl:
             kl_tensor_list = []
-            num_data_list = []
+            kl_num_data_list = []
+        
+        if self.plot_ratio:
+            # 各エージェントのratio_tensorを格納するリスト  
+            ratio_tensor_list = []
+            
             
         for mini_ep in range(0, self.mini_epochs_num):
             ep_kls = []
@@ -1835,9 +1845,17 @@ class ContinuousA2CBase(A2CBase):
                 if self.plot_kl and mini_ep == 0:
                     kl_tensor, num_data = self.calc_agents_kl(self.dataset[i])
                     kl_tensor_list.append(kl_tensor)
-                    num_data_list.append(num_data)
-                
-                
+                    kl_num_data_list.append(num_data)
+                    
+                if self.plot_ratio and mini_ep == 0:
+                    ratio_list = self.calc_importance_ratio(self.dataset[i])
+                    # ratio_tensor_listが空ならコピーし、空じゃなければ長さが同じことを確認し、各要素のtensorを結合する
+                    if len(ratio_tensor_list) == 0:
+                        ratio_tensor_list = [r.clone() for r in ratio_list]
+                    else:
+                        assert len(ratio_tensor_list) == len(ratio_list), "Length of ratio_tensor_list[0] and ratio_list are not equal"
+                        ratio_tensor_list = [torch.cat([ratio_tensor_list[j], ratio_list[j]], dim=0) for j in range(len(ratio_tensor_list))]
+
                 a_loss, c_loss, entropy, kl, last_lr, lr_mul, cmu, csigma, b_loss, extras = self.train_actor_critic(self.dataset[i])
                 extra_infos['on_policy_contrib'].append(extras['on_policy_contrib'])
                 extra_infos['on_policy_grads'].append(extras['on_policy_grads'])
@@ -1886,12 +1904,10 @@ class ContinuousA2CBase(A2CBase):
 
         if self.plot_kl:
             kl_tensor = torch.stack(kl_tensor_list)
-            num_data = torch.tensor(num_data_list)
-            
-            kl_tensor = torch.sum(kl_tensor * num_data.unsqueeze(1).unsqueeze(2).to(self.ppo_device), dim=0) / torch.sum(num_data, dim=0)
+            kl_num_data = torch.tensor(kl_num_data_list)
+            kl_tensor = torch.sum(kl_tensor * kl_num_data.unsqueeze(1).unsqueeze(2).to(self.ppo_device), dim=0) / torch.sum(kl_num_data, dim=0)
             
             print("KL distance", kl_tensor)
-            
             
             if os.path.exists(self.kl_path):
                 pass
@@ -1903,9 +1919,48 @@ class ContinuousA2CBase(A2CBase):
                 index=False,
                 header= (not (os.path.exists(self.kl_path)))
             )
-            
-    
+        
+        if self.plot_ratio:
+            ratio_mean = [ratio_tensor.mean(dim=0).item() for ratio_tensor in ratio_tensor_list]
+            print("Importance ratio", ratio_mean)
 
+            if os.path.exists(self.ratio_path):
+                pass
+            
+            row = pd.DataFrame([ratio_mean])
+            row.to_csv(
+                self.ratio_path,
+                mode="a",
+                index=False,
+                header= (not (os.path.exists(self.ratio_path)))
+            )
+            
+            # Calc agent-wise relative ESS and overall relative ESS
+            agent_relative_ess = [self.compute_relative_ess(ratio_tensor) for ratio_tensor in ratio_tensor_list]
+            overall_relative_ess = self.compute_relative_ess(torch.cat(ratio_tensor_list, dim=0))
+            print("Agent-wise relative ESS", agent_relative_ess)
+            print("Overall relative ESS", overall_relative_ess)
+            
+            # Save agent wise relative ESS and overall relative ESS to csv
+            
+            agent_relative_ess_row = pd.DataFrame([agent_relative_ess])
+            agent_relative_ess_row.to_csv(
+                self.agent_relative_ess_path,
+                mode="a",
+                index=False,
+                header= (not (os.path.exists(self.agent_relative_ess_path)))
+            )
+            overall_relative_ess_row = pd.DataFrame([overall_relative_ess])
+            overall_relative_ess_row.to_csv(
+                self.overall_relative_ess_path,
+                mode="a",
+                index=False,
+                header= (not (os.path.exists(self.overall_relative_ess_path)))
+            )
+            
+            
+            
+            
         update_time_end = time.time()
         play_time = play_time_end - play_time_start
         update_time = update_time_end - update_time_start

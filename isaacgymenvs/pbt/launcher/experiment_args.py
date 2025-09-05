@@ -22,7 +22,7 @@ def add_experiment_args(parser):
     #     "Experiment module must be importable in your Python environment. It must define a global variable EXPERIMENT_DESCRIPTION (see existing experiment modules for examples).",
     # )
     
-    parser.add_argument("--env", default="allegro_kuka", choices=["ant","allegro_kuka", "allegro_kuka_two_arms","franka_cube_stack","franka_cube_push", "shadow_hand", "allegro_hand", "trifinger", "franka_cabinet", "humanoid", "cont_mountain_car"], type=str, help="Environment to run")
+    parser.add_argument("--env", default="allegro_kuka", choices=["ant","allegro_kuka", "allegro_kuka_two_arms","franka_cube_stack","franka_cube_push", "shadow_hand", "allegro_hand", "trifinger", "franka_cabinet", "humanoid", "cont_mountain_car", "anymal"], type=str, help="Environment to run")
     parser.add_argument("--task" , default="reorientation", type=str, help="Task to run")
     parser.add_argument("--sparse-reward", action='store_true', help="Whether to use sparse reward")
     parser.add_argument("--episode-length", default=None, type=int, help="Episode length")
@@ -92,7 +92,8 @@ def get_experiment_run_description(args):
         "trifinger": "Trifinger",
         "franka_cabinet" : "FrankaCabinet",
         "humanoid" : "Humanoid",
-        "cont_mountain_car" : "ContinuousMountainCar"
+        "cont_mountain_car" : "ContinuousMountainCar",
+        "anymal" : "Anymal"
     }
 
     mutation_dict = {
@@ -106,7 +107,8 @@ def get_experiment_run_description(args):
         "trifinger": "default_mutation",
         "franka_cabinet" : "default_mutation",
         "humanoid" : "default_mutation",
-        "cont_mountain_car" : "default_mutation"
+        "cont_mountain_car" : "default_mutation",
+        "anymal" : "default_mutation",
     }
 
     if args.minibatch_size is None:
