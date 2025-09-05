@@ -58,6 +58,8 @@ from .industreal.industreal_task_pegs_insert import IndustRealTaskPegsInsert
 from .industreal.industreal_task_gears_insert import IndustRealTaskGearsInsert
 from .cont_mc.cont_mc import ContinuousMountainCar
 
+from .parkour import Parkour
+
 def resolve_allegro_kuka(cfg, *args, **kwargs):
     subtask_name: str = cfg["env"]["subtask"]
     subtask_map = dict(
@@ -114,4 +116,5 @@ isaacgym_task_map = {
     "ShadowHand": ShadowHand,
     "Trifinger": Trifinger,
     "ContinuousMountainCar": ContinuousMountainCar,
+    "Parkour": Parkour
 }
