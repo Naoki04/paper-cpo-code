@@ -110,7 +110,7 @@ def get_experiment_run_description(args):
         "humanoid" : "default_mutation",
         "cont_mountain_car" : "default_mutation",
         "anymal" : "default_mutation",
-        "parkour" : "Parkour"
+        "parkour" : "default_mutation"
     }
 
     if args.minibatch_size is None:
