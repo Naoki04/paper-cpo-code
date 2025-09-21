@@ -301,7 +301,8 @@ class A2CBase(BaseAlgorithm):
         if self.plot_kl:
             self.kl_path = os.path.join(self.train_dir, "kl_dists.csv")
         if self.plot_ratio:
-            self.ratio_path = os.path.join(self.train_dir, "importance_ratios.csv")
+            self.ratio_deviation_mean_path = os.path.join(self.train_dir, "IS_ratio_deviation_mean.csv")
+            self.ratio_deviation_std_path = os.path.join(self.train_dir, "IS_ratio_deviation_std.csv")
             self.agent_relative_ess_path = os.path.join(self.train_dir, "agent_ess.csv")
             self.overall_relative_ess_path = os.path.join(self.train_dir, "overall_ess.csv")
 
@@ -1928,18 +1929,31 @@ class ContinuousA2CBase(A2CBase):
             )
         
         if self.plot_ratio:
-            ratio_mean = [ratio_tensor.mean(dim=0).item() for ratio_tensor in ratio_tensor_list]
-            print("Importance ratio", ratio_mean)
+            # --- deviation を計算 ---
+            ratio_deviation_mean = [(ratio_tensor - 1.0).abs().mean(dim=0).item()
+                                    for ratio_tensor in ratio_tensor_list]
+            ratio_deviation_std = [(ratio_tensor - 1.0).abs().std(dim=0, unbiased=True).item()
+                                for ratio_tensor in ratio_tensor_list]
 
-            if os.path.exists(self.ratio_path):
-                pass
-            
-            row = pd.DataFrame([ratio_mean])
-            row.to_csv(
-                self.ratio_path,
+            print("IS ratio deviation mean", ratio_deviation_mean)
+            print("IS ratio deviation std", ratio_deviation_std)
+
+            # --- mean 用ファイル ---
+            row_mean = pd.DataFrame([ratio_deviation_mean])
+            row_mean.to_csv(
+                self.ratio_deviation_mean_path,
                 mode="a",
                 index=False,
-                header= (not (os.path.exists(self.ratio_path)))
+                header=(not os.path.exists(self.ratio_deviation_mean_path))
+            )
+
+            # --- std 用ファイル ---
+            row_std = pd.DataFrame([ratio_deviation_std])
+            row_std.to_csv(
+                self.ratio_deviation_std_path,
+                mode="a",
+                index=False,
+                header=(not os.path.exists(self.ratio_deviation_std_path))
             )
             
             # Calc agent-wise relative ESS and overall relative ESS
