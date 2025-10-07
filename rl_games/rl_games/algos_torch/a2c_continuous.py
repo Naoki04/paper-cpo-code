@@ -77,6 +77,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         
         self.use_ad_reward = self.config.get('use_ad_reward', False)
         self.ad_reward_type = self.config.get('ad_reward_type', None)
+        self.ad_reward_discriminate_leader = self.config.get('ad_reward_discriminate_leader', True)
         self.off_policy_ceb = self.config.get('off_policy_ceb', False)
         
         if self.use_ad_reward:
@@ -97,12 +98,21 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 assert False, "ad_reward_type is invalid."
             print("disc_obs_len: ", disc_obs_len)
             
-            self.discriminator = Discriminator(
-                input_shape=disc_obs_len, 
-                hidden_dim=list(discriminator_config["units"]), 
-                num_agents=int(self.num_actors/self.intr_coef_block_size)-1, 
-                activation_name=activation_name
-            ).to(self.ppo_device)
+            if self.ad_reward_discriminate_leader: # if discriminate_leader is True, 6 class clasification.
+                self.discriminator = Discriminator(
+                    input_shape=disc_obs_len, 
+                    hidden_dim=list(discriminator_config["units"]), 
+                    num_agents=int(self.num_actors/self.intr_coef_block_size), 
+                    activation_name=activation_name
+                ).to(self.ppo_device)
+            else:
+                self.discriminator = Discriminator(
+                    input_shape=disc_obs_len, 
+                    hidden_dim=list(discriminator_config["units"]), 
+                    num_agents=int(self.num_actors/self.intr_coef_block_size)-1, 
+                    activation_name=activation_name
+                ).to(self.ppo_device)
+                
             print("==== Discriminator is build. ====")
             summary(self.discriminator, (disc_obs_len,))
             print("=================================")

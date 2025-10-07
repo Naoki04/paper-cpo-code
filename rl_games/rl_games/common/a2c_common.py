@@ -301,7 +301,8 @@ class A2CBase(BaseAlgorithm):
         if self.plot_kl:
             self.kl_path = os.path.join(self.train_dir, "kl_dists.csv")
         if self.plot_ratio:
-            self.ratio_path = os.path.join(self.train_dir, "importance_ratios.csv")
+            self.ratio_deviation_mean_path = os.path.join(self.train_dir, "IS_ratio_deviation_mean.csv")
+            self.ratio_deviation_std_path = os.path.join(self.train_dir, "IS_ratio_deviation_std.csv")
             self.agent_relative_ess_path = os.path.join(self.train_dir, "agent_ess.csv")
             self.overall_relative_ess_path = os.path.join(self.train_dir, "overall_ess.csv")
 
@@ -1073,8 +1074,6 @@ class A2CBase(BaseAlgorithm):
                 # generate class label
                 step_per_block = pure_obs_flat.shape[0] // (self.num_actors // self.intr_coef_block_size) 
                 y_label = torch.arange(self.num_actors // self.intr_coef_block_size, device=self.ppo_device).flip(0).repeat_interleave(step_per_block).long()
-                # set adversarial reward 0 for the leader
-                followers_mask = (y_label != 0)
                 
                 # generate input for discriminator
                 if self.ad_reward_type == "s":
@@ -1083,22 +1082,33 @@ class A2CBase(BaseAlgorithm):
                     disc_input = actions_flat
                 elif self.ad_reward_type == "sa":
                     disc_input = torch.cat([pure_obs_flat, actions_flat], dim=1)
-                
-                # extract only followers' data
-                disc_input = disc_input[followers_mask]
-                y_label = y_label[followers_mask] - 1 # shift label to start from 0
-                
-                # calculate discriminator loss
-                y_pred = self.discriminator(disc_input)
-                
-                disc_loss_array = self.disc_loss_func(y_pred, y_label) 
-                """
-                # adversarial reward calculation
-                """
-                
-                ad_rewards = torch.zeros_like(followers_mask, dtype=torch.float, device=self.ppo_device)
-                ad_rewards[followers_mask] = - disc_loss_array * self.ad_reward_coef  # loss to reward
-                ad_rewards = ad_rewards.view(self.horizon_length, -1, 1)
+                    
+                if self.ad_reward_discriminate_leader: # discriminate all agents and give ad_reward only to followers.
+                    # calculate discriminator loss
+                    y_pred = self.discriminator(disc_input)
+                    disc_loss_array = self.disc_loss_func(y_pred, y_label) 
+                    """
+                    # adversarial reward calculation
+                    """
+                    # set adversarial reward 0 for the leader
+                    followers_mask = (y_label != 0)
+                    ad_rewards = - disc_loss_array * self.ad_reward_coef * followers_mask # loss to reward
+                    ad_rewards = ad_rewards.view(self.horizon_length, -1, 1)
+                else: # discriminate only followers
+                    # set adversarial reward 0 for the leader
+                    followers_mask = (y_label != 0)
+                    # extract only followers' data
+                    disc_input = disc_input[followers_mask]
+                    y_label = y_label[followers_mask] - 1 # shift label to start from 0
+                    # calculate discriminator loss
+                    y_pred = self.discriminator(disc_input)
+                    disc_loss_array = self.disc_loss_func(y_pred, y_label) 
+                    """
+                    # adversarial reward calculation
+                    """
+                    ad_rewards = torch.zeros_like(followers_mask, dtype=torch.float, device=self.ppo_device)
+                    ad_rewards[followers_mask] = - disc_loss_array * self.ad_reward_coef  # loss to reward
+                    ad_rewards = ad_rewards.view(self.horizon_length, -1, 1)
                 
                 # recalculate return
                 reward_with_ad_rew = mb_total_rewards + ad_rewards
@@ -1106,9 +1116,7 @@ class A2CBase(BaseAlgorithm):
                 mb_advs_with_ad_rew = self.discount_values(fdones, last_values, mb_fdones, mb_values, reward_with_ad_rew)
                 mb_returns_with_ad_rew = mb_advs_with_ad_rew + mb_values
 
-                
-                batch_dict['returns_with_ad_rew'] = swap_and_flatten01(mb_returns_with_ad_rew)
-                
+                batch_dict['returns_with_ad_rew'] = swap_and_flatten01(mb_returns_with_ad_rew)                
                 extras["ad_reward_mean"] = ad_rewards.mean().item()*(followers_mask.sum().item()/ad_rewards.shape[1])
                 extras["disc_loss_mean"] = disc_loss_array.mean().item()
                 
@@ -1921,18 +1929,31 @@ class ContinuousA2CBase(A2CBase):
             )
         
         if self.plot_ratio:
-            ratio_mean = [ratio_tensor.mean(dim=0).item() for ratio_tensor in ratio_tensor_list]
-            print("Importance ratio", ratio_mean)
+            # --- deviation を計算 ---
+            ratio_deviation_mean = [(ratio_tensor - 1.0).abs().mean(dim=0).item()
+                                    for ratio_tensor in ratio_tensor_list]
+            ratio_deviation_std = [(ratio_tensor - 1.0).abs().std(dim=0, unbiased=True).item()
+                                for ratio_tensor in ratio_tensor_list]
 
-            if os.path.exists(self.ratio_path):
-                pass
-            
-            row = pd.DataFrame([ratio_mean])
-            row.to_csv(
-                self.ratio_path,
+            print("IS ratio deviation mean", ratio_deviation_mean)
+            print("IS ratio deviation std", ratio_deviation_std)
+
+            # --- mean 用ファイル ---
+            row_mean = pd.DataFrame([ratio_deviation_mean])
+            row_mean.to_csv(
+                self.ratio_deviation_mean_path,
                 mode="a",
                 index=False,
-                header= (not (os.path.exists(self.ratio_path)))
+                header=(not os.path.exists(self.ratio_deviation_mean_path))
+            )
+
+            # --- std 用ファイル ---
+            row_std = pd.DataFrame([ratio_deviation_std])
+            row_std.to_csv(
+                self.ratio_deviation_std_path,
+                mode="a",
+                index=False,
+                header=(not os.path.exists(self.ratio_deviation_std_path))
             )
             
             # Calc agent-wise relative ESS and overall relative ESS

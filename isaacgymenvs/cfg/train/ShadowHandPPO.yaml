@@ -68,6 +68,7 @@ params:
     
     use_ad_reward: True
     ad_reward_type: "sa" # 'sa', 's', 'a'
+    ad_reward_discriminate_leader: True
     discriminator_config: 
       units: [1024, 1024, 512, 512]
       activation: elu
