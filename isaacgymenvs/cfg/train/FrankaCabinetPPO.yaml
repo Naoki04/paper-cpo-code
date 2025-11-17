@@ -9,6 +9,7 @@ params:
   network:
     name: actor_critic
     separate: False
+    double_critic: False 
 
     space:
       continuous:
@@ -51,10 +52,35 @@ params:
     learning_rate: 5e-4
     lr_schedule: adaptive
     kl_threshold: 0.008
-    score_to_win: 10000
-    max_epochs: ${resolve_default:300000,${....max_iterations}}
-    save_best_after: 200
-    save_frequency: 3000
+    max_epochs: 52000 #${resolve_default:1000,${....max_iterations}}
+    
+    sapg2: True
+    vanilla_sapg: False 
+    lambda_awac : 0.2
+    lambda_ppo: 0
+    awac_max: 100
+    awac_alpha: 1 
+    awac_beta: 0 
+    awac_gamma: 1 
+    enable_w: False 
+    save_batch: False 
+    off_policy_ceb: True 
+    double_critic: ${..network.double_critic}
+    scheduler_kl_data: no_awac 
+    reduce_awac: False 
+    plot_kl: False # Plot KL divergence between up-to-date agents
+    plot_ratio: False # Plot importance ratios between bahavior followers and the up-to-date leader
+
+    use_ad_reward: True
+    ad_reward_type: "sa" # 'sa', 's', 'a'
+    ad_reward_discriminate_leader: True
+    discriminator_config: 
+      units: [256, 128, 64]
+      activation: elu
+    ad_reward_coef: 0
+
+    save_best_after: 50
+    save_frequency: 5200 #1000
     print_stats: True
     grad_norm: 1.0
     entropy_coef: 0.0
@@ -65,7 +91,7 @@ params:
     mini_epochs: 8
     critic_coef: 4
     clip_value: True
-    seq_len: 4
+    seq_len: 16
     bounds_loss_coef: 0.0001
 
     good_reset_boundary: ${if:${....task.env.goodResetBoundary},${....task.env.goodResetBoundary},0}
