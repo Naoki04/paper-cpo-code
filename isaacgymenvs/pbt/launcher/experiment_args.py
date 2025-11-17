@@ -22,7 +22,7 @@ def add_experiment_args(parser):
     #     "Experiment module must be importable in your Python environment. It must define a global variable EXPERIMENT_DESCRIPTION (see existing experiment modules for examples).",
     # )
     
-    parser.add_argument("--env", default="allegro_kuka", choices=["ant","allegro_kuka", "allegro_kuka_two_arms","franka_cube_stack","franka_cube_push", "shadow_hand", "allegro_hand", "trifinger", "franka_cabinet", "humanoid", "cont_mountain_car", "anymal", "parkour", "franka_cube_stack", "franka_cabinet"], type=str, help="Environment to run")
+    parser.add_argument("--env", default="allegro_kuka", choices=["ant","allegro_kuka", "allegro_kuka_two_arms","franka_cube_stack","franka_cube_push", "shadow_hand", "allegro_hand", "trifinger", "franka_cabinet", "humanoid", "cont_mountain_car", "anymal", "parkour"], type=str, help="Environment to run")
     parser.add_argument("--task" , default="reorientation", type=str, help="Task to run")
     parser.add_argument("--sparse-reward", action='store_true', help="Whether to use sparse reward")
     parser.add_argument("--episode-length", default=None, type=int, help="Episode length")
