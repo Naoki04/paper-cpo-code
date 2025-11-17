@@ -55,7 +55,7 @@ params:
     schedule_type: standard
     kl_threshold: 0.008
     score_to_win: 10000
-    max_epochs: 52000 #${resolve_default:1000,${....max_iterations}}
+    max_epochs: 13000 #${resolve_default:1000,${....max_iterations}}
     
     sapg2: True
     vanilla_sapg: False 

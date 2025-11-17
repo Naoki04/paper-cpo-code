@@ -52,7 +52,7 @@ params:
     learning_rate: 5e-4
     lr_schedule: adaptive
     kl_threshold: 0.008
-    max_epochs: 52000 #${resolve_default:1000,${....max_iterations}}
+    max_epochs: 26000 #${resolve_default:1000,${....max_iterations}}
     
     sapg2: True
     vanilla_sapg: False 
