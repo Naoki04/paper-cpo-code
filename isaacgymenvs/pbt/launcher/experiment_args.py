@@ -111,7 +111,6 @@ def get_experiment_run_description(args):
         "cont_mountain_car" : "default_mutation",
         "anymal" : "default_mutation",
         "parkour" : "default_mutation",
-        "franka_cube_stack": "default_mutation",
     }
 
     if args.minibatch_size is None:
