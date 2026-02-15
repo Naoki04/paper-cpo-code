@@ -1,0 +1,45 @@
+Evaluating for target step: 5000000000.0
+==========================
+Task: Anymal
+Target Env Step: 5000000000.0
+Metric: rewards/step
+--------------------------
+
+SAPG: [67.54065 70.39429 71.48605 66.63535 69.8612 ]
+seeds: [0, 1, 2, 3, 4]
+mean: 69
+std: 2
+--
+PPO: [67.06047  65.09665  69.553764 69.28511  65.97602 ]
+seeds: [0, 1, 2, 3, 4]
+mean: 67
+std: 2
+--
+PBT: [70.06803 69.45213 70.89661 65.80324 65.32468]
+seeds: [0, 1, 2, 3, 4]
+mean: 68
+std: 3
+--
+CPO: [71.18196  70.77956  70.776985 70.67458  70.80326 ]
+seeds: [0, 1, 2, 3, 4]
+mean: 71
+std: 0
+--
+==========================
+✅ Top method by mean: CPO
+Mean: 70.843, 95% CI: [70.600, 71.086]
+
+------ p-values vs top method (Welch's t-test) ------
+SAPG           : p = 0.1410
+PPO            : p = 0.0172
+PBT            : p = 0.0914
+
+------ Summary ------
+✅ Statistically tied top methods (p ≥ 0.05 vs top): CPO, SAPG, PBT
+⚠️  Methods significantly worse than 'CPO' (p < 0.05): PPO
+
+--------------------------------------------------
+Top: CPO
+No Significant Difference: SAPG, PBT
+Significantly Worse: PPO
+--------------------------------------------------

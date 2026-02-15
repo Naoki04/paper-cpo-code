@@ -1,0 +1,204 @@
+Evaluating for target step: 5000000000.0
+==========================
+Task: Shadow Hand
+Target Env Step: 5000000000.0
+Metric: rewards/step
+--------------------------
+
+KL_0.05: [11055.754 11353.848 11539.166]
+seeds: [0, 1, 2]
+mean: 11316.255
+std: 243.889
+--
+KL_0.1: [11487.454 10618.933 11997.877]
+seeds: [0, 1, 2]
+mean: 11368.089
+std: 697.179
+--
+KL_0.2: [11605.87  11930.085 12281.733]
+seeds: [0, 1, 2]
+mean: 11939.229
+std: 338.024
+--
+KL_0.5: [11683.551 10586.815 11362.383]
+seeds: [0, 1, 2]
+mean: 11210.917
+std: 563.838
+--
+SAPG: [10662.374 10594.836 11651.961]
+seeds: [0, 1, 2]
+mean: 10969.724
+std: 591.799
+--
+==========================
+✅ Top method by mean: KL_0.2
+Mean: 11939.229, 95% CI: [11099.530, 12778.929]
+
+------ p-values vs top method (Welch's t-test) ------
+KL_0.05        : p = 0.0668
+KL_0.1         : p = 0.2946
+KL_0.5         : p = 0.1431
+SAPG           : p = 0.0858
+
+------ Summary ------
+✅ Statistically tied top methods (p ≥ 0.05 vs top): KL_0.2, KL_0.05, KL_0.1, KL_0.5, SAPG
+✅ No methods are significantly worse than 'KL_0.2'
+
+--------------------------------------------------
+Top: KL_0.2
+No Significant Difference: KL_0.05, KL_0.1, KL_0.5, SAPG
+Significantly Worse: (none)
+--------------------------------------------------
+Evaluating for target step: 10000000000.0
+==========================
+Task: Shadow Hand
+Target Env Step: 10000000000.0
+Metric: rewards/step
+--------------------------
+
+KL_0.05: [12209.698 12873.648 12869.319]
+seeds: [0, 1, 2]
+mean: 12650.890
+std: 382.088
+--
+KL_0.1: [12523.517 12169.719 13091.336]
+seeds: [0, 1, 2]
+mean: 12594.856
+std: 464.932
+--
+KL_0.2: [12925.911 13246.241 13218.061]
+seeds: [0, 1, 2]
+mean: 13130.070
+std: 177.368
+--
+KL_0.5: [12840.628 12314.926 12174.888]
+seeds: [0, 1, 2]
+mean: 12443.480
+std: 350.995
+--
+SAPG: [11884.704 11687.214 12670.867]
+seeds: [0, 1, 2]
+mean: 12080.929
+std: 520.357
+--
+==========================
+✅ Top method by mean: KL_0.2
+Mean: 13130.070, 95% CI: [12689.463, 13570.677]
+
+------ p-values vs top method (Welch's t-test) ------
+KL_0.05        : p = 0.1491
+KL_0.1         : p = 0.1746
+KL_0.5         : p = 0.0576
+SAPG           : p = 0.0606
+
+------ Summary ------
+✅ Statistically tied top methods (p ≥ 0.05 vs top): KL_0.2, KL_0.05, KL_0.1, KL_0.5, SAPG
+✅ No methods are significantly worse than 'KL_0.2'
+
+--------------------------------------------------
+Top: KL_0.2
+No Significant Difference: KL_0.05, KL_0.1, KL_0.5, SAPG
+Significantly Worse: (none)
+--------------------------------------------------
+Evaluating for target step: 15000000000.0
+==========================
+Task: Shadow Hand
+Target Env Step: 15000000000.0
+Metric: rewards/step
+--------------------------
+
+KL_0.05: [12836.782 13423.638 13287.065]
+seeds: [0, 1, 2]
+mean: 13182.495
+std: 307.085
+--
+KL_0.1: [12982.326 12830.403 13671.265]
+seeds: [0, 1, 2]
+mean: 13161.332
+std: 448.101
+--
+KL_0.2: [13371.468 13667.716 13563.394]
+seeds: [0, 1, 2]
+mean: 13534.192
+std: 150.267
+--
+KL_0.5: [13456.061 13120.498 12605.974]
+seeds: [0, 1, 2]
+mean: 13060.844
+std: 428.172
+--
+SAPG: [12364.819 12161.995 13134.352]
+seeds: [0, 1, 2]
+mean: 12553.722
+std: 512.964
+--
+==========================
+✅ Top method by mean: KL_0.2
+Mean: 13534.192, 95% CI: [13160.908, 13907.477]
+
+------ p-values vs top method (Welch's t-test) ------
+KL_0.05        : p = 0.1758
+KL_0.1         : p = 0.2839
+KL_0.5         : p = 0.1872
+SAPG           : p = 0.0703
+
+------ Summary ------
+✅ Statistically tied top methods (p ≥ 0.05 vs top): KL_0.2, KL_0.05, KL_0.1, KL_0.5, SAPG
+✅ No methods are significantly worse than 'KL_0.2'
+
+--------------------------------------------------
+Top: KL_0.2
+No Significant Difference: KL_0.05, KL_0.1, KL_0.5, SAPG
+Significantly Worse: (none)
+--------------------------------------------------
+Evaluating for target step: 20000000000.0
+==========================
+Task: Shadow Hand
+Target Env Step: 20000000000.0
+Metric: rewards/step
+--------------------------
+
+KL_0.05: [13068.553 13571.625 13578.256]
+seeds: [0, 1, 2]
+mean: 13406.145
+std: 292.382
+--
+KL_0.1: [13184.907 12990.2   14020.999]
+seeds: [0, 1, 2]
+mean: 13398.702
+std: 547.647
+--
+KL_0.2: [13699.058 14012.735 13843.45 ]
+seeds: [0, 1, 2]
+mean: 13851.747
+std: 157.003
+--
+KL_0.5: [13712.737 13551.706 12861.922]
+seeds: [0, 1, 2]
+mean: 13375.456
+std: 451.962
+--
+SAPG: [12669.979 12537.591 13426.16 ]
+seeds: [0, 1, 2]
+mean: 12877.910
+std: 479.391
+--
+==========================
+✅ Top method by mean: KL_0.2
+Mean: 13851.747, 95% CI: [13461.729, 14241.765]
+
+------ p-values vs top method (Welch's t-test) ------
+KL_0.05        : p = 0.1007
+KL_0.1         : p = 0.2859
+KL_0.5         : p = 0.2021
+SAPG           : p = 0.0604
+
+------ Summary ------
+✅ Statistically tied top methods (p ≥ 0.05 vs top): KL_0.2, KL_0.05, KL_0.1, KL_0.5, SAPG
+✅ No methods are significantly worse than 'KL_0.2'
+
+--------------------------------------------------
+Top: KL_0.2
+No Significant Difference: KL_0.05, KL_0.1, KL_0.5, SAPG
+Significantly Worse: (none)
+--------------------------------------------------

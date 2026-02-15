@@ -1,0 +1,45 @@
+Evaluating for target step: 20000000000.0
+==========================
+Task: AllegroKuka Two-Arms Reorientation
+Target Env Step: 20000000000.0
+Metric: successes/time
+--------------------------
+
+SAPG: [ 2.8034966  2.882273  10.635559   6.2360444  3.0128891]
+seeds: [0, 1, 2, 3, 4]
+mean: 5.11
+std: 3.41
+--
+PPO: [0.69059664 1.2557567  0.9395231  2.7505436  1.403508  ]
+seeds: [0, 1, 2, 3, 4]
+mean: 1.41
+std: 0.80
+--
+PBT: [36.574787 16.322693 31.052525 12.771078 35.44622 ]
+seeds: [0, 1, 2, 3, 4]
+mean: 26.43
+std: 11.12
+--
+CPO: [36.830624 32.6171   32.209984 38.562805 36.30193 ]
+seeds: [0, 1, 2, 3, 4]
+mean: 35.30
+std: 2.77
+--
+==========================
+✅ Top method by mean: CPO
+Mean: 35.304, 95% CI: [31.862, 38.747]
+
+------ p-values vs top method (Welch's t-test) ------
+SAPG           : p = 0.0000
+PPO            : p = 0.0000
+PBT            : p = 0.1505
+
+------ Summary ------
+✅ Statistically tied top methods (p ≥ 0.05 vs top): CPO, PBT
+⚠️  Methods significantly worse than 'CPO' (p < 0.05): SAPG, PPO
+
+--------------------------------------------------
+Top: CPO
+No Significant Difference: PBT
+Significantly Worse: SAPG, PPO
+--------------------------------------------------

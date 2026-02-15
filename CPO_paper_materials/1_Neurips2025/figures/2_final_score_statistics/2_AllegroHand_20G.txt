@@ -1,0 +1,44 @@
+==========================
+Task: sapg_allegro_hand
+Target Env Step: 20000000000
+Metric: rewards/step
+--------------------------
+
+CPO(w/AdR): [13971.661 13610.415 13904.395 15755.734 15060.058]
+seeds: [0, 1, 2, 3, 4]
+mean: 14460.453
+std: 909.390
+--
+SAPG: [12563.828 12245.774 10617.471 11678.908 11470.984]
+seeds: [0, 1, 2, 3, 4]
+mean: 11715.393
+std: 752.935
+--
+PPO: [12122.308  9673.58   8998.082  9870.231 11351.096]
+seeds: [0, 1, 2, 3, 4]
+mean: 10403.060
+std: 1288.856
+--
+PBT: [12644.14   12932.074  12845.532  12984.3955 13659.072 ]
+seeds: [0, 1, 2, 3, 4]
+mean: 13013.042
+std: 383.693
+--
+==========================
+✅ Top method by mean: CPO(w/AdR)
+Mean: 14460.453, 95% CI: [13331.296, 15589.610]
+
+------ p-values vs top method (Welch's t-test) ------
+SAPG           : p = 0.0009
+PPO            : p = 0.0006
+PBT            : p = 0.0197
+
+------ Summary ------
+✅ Only 'CPO(w/AdR)' is significantly better than all others (p < 0.05)
+⚠️  Methods significantly worse than 'CPO(w/AdR)' (p < 0.05): SAPG, PPO, PBT
+
+--------------------------------------------------
+Top: CPO(w/AdR)
+No Significant Difference: (none)
+Significantly Worse: SAPG, PPO, PBT
+--------------------------------------------------

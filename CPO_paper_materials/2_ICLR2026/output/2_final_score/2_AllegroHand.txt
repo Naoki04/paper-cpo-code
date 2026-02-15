@@ -1,0 +1,45 @@
+Evaluating for target step: 20000000000.0
+==========================
+Task: AllegroHand
+Target Env Step: 20000000000.0
+Metric: rewards/step
+--------------------------
+
+SAPG: [12563.516  12372.1875 10692.777  11678.908  12636.054 ]
+seeds: [0, 1, 2, 3, 4]
+mean: 11989
+std: 817
+--
+PPO: [12122.308  9735.941  9011.297  9917.851 11406.255]
+seeds: [0, 1, 2, 3, 4]
+mean: 10439
+std: 1282
+--
+PBT: [13218.537 13054.802 13007.259 13304.579 13607.84 ]
+seeds: [0, 1, 2, 3, 4]
+mean: 13239
+std: 239
+--
+CPO: [13956.149 13576.436 13952.225 15755.734 14866.818]
+seeds: [0, 1, 2, 3, 4]
+mean: 14421
+std: 885
+--
+==========================
+✅ Top method by mean: CPO
+Mean: 14421.474, 95% CI: [13323.216, 15519.731]
+
+------ p-values vs top method (Welch's t-test) ------
+SAPG           : p = 0.0020
+PPO            : p = 0.0007
+PBT            : p = 0.0380
+
+------ Summary ------
+✅ Only 'CPO' is significantly better than all others (p < 0.05)
+⚠️  Methods significantly worse than 'CPO' (p < 0.05): SAPG, PPO, PBT
+
+--------------------------------------------------
+Top: CPO
+No Significant Difference: (none)
+Significantly Worse: SAPG, PPO, PBT
+--------------------------------------------------

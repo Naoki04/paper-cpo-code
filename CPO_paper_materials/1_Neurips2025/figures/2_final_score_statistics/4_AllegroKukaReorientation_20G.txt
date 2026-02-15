@@ -1,0 +1,44 @@
+==========================
+Task: sapg_allegro_kuka_reorientation
+Target Env Step: 20000000000
+Metric: successes/time
+--------------------------
+
+CPO(wo/AdR): [44.143467 44.411713 43.419266 42.81929  42.708042]
+seeds: [0, 1, 2, 3, 4]
+mean: 43.500
+std: 0.765
+--
+SAPG: [39.36575  40.569187 36.171124 39.439888 38.55333 ]
+seeds: [0, 1, 2, 3, 4]
+mean: 38.820
+std: 1.645
+--
+PPO: [1.2198583e+00 2.1768689e+00 1.8546175e-03 1.7699955e+00 6.5071292e-02]
+seeds: [0, 1, 2, 3, 4]
+mean: 1.047
+std: 0.986
+--
+PBT: [ 0.79994845  1.0707543   1.5691068   0.6267401  10.528993  ]
+seeds: [0, 1, 2, 3, 4]
+mean: 2.919
+std: 4.269
+--
+==========================
+✅ Top method by mean: CPO(wo/AdR)
+Mean: 43.500, 95% CI: [42.550, 44.451]
+
+------ p-values vs top method (Welch's t-test) ------
+SAPG           : p = 0.0015
+PPO            : p = 0.0000
+PBT            : p = 0.0000
+
+------ Summary ------
+✅ Only 'CPO(wo/AdR)' is significantly better than all others (p < 0.05)
+⚠️  Methods significantly worse than 'CPO(wo/AdR)' (p < 0.05): SAPG, PPO, PBT
+
+--------------------------------------------------
+Top: CPO(wo/AdR)
+No Significant Difference: (none)
+Significantly Worse: SAPG, PPO, PBT
+--------------------------------------------------

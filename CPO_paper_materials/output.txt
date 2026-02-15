@@ -1,0 +1,44 @@
+==========================
+Task: FrankaCubeStack
+Target Env Step: 5000000000.0
+Metric: rewards/time
+--------------------------
+
+SAPG: [740.3679  771.61865 766.3865  798.66473 774.35254]
+seeds: [0, 1, 2, 3, 4]
+mean: 770
+std: 21
+--
+PPO: [679.65674 644.68866 690.3095  649.7828  702.8853 ]
+seeds: [0, 1, 2, 3, 4]
+mean: 673
+std: 25
+--
+PBT: [ 23.394197  17.8299    15.939111 297.7091   297.7091  ]
+seeds: [0, 1, 2, 3, 4]
+mean: 131
+std: 153
+--
+CPO: [813.79047 823.08636 823.91284 816.50806 807.7964 ]
+seeds: [0, 1, 2, 3, 4]
+mean: 817
+std: 7
+--
+==========================
+✅ Top method by mean: CPO
+Mean: 817.019, 95% CI: [808.688, 825.350]
+
+------ p-values vs top method (Welch's t-test) ------
+SAPG           : p = 0.0055
+PPO            : p = 0.0001
+PBT            : p = 0.0005
+
+------ Summary ------
+✅ Only 'CPO' is significantly better than all others (p < 0.05)
+⚠️  Methods significantly worse than 'CPO' (p < 0.05): SAPG, PPO, PBT
+
+--------------------------------------------------
+Top: CPO
+No Significant Difference: (none)
+Significantly Worse: SAPG, PPO, PBT
+--------------------------------------------------

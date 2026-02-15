@@ -1,0 +1,13 @@
+Task,EnvSteps, L, F1, F2, F3, F4, F5
+ShadowHand, SAPG, , , , , ,
+, CPO(0.5), , , , , ,
+, CPO(0.2), , , , , ,
+, CPO(0.1), , , , , ,
+, CPO(0.05), , , , , ,
+,,,,,
+AllegroKuka Reorientation, SAPG, , , , , ,
+, CPO(0.5), , , , , ,
+, CPO(0.2), , , , , ,
+, CPO(0.1), , , , , ,
+, CPO(0.05), , , , , ,
+,,,,,

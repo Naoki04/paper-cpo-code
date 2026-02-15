@@ -1,0 +1,156 @@
+Evaluating for target step: 5000000000.0
+==========================
+Task: sapg_allegro_kuka_two_arms_reorientation
+Target Env Step: 5000000000.0
+Metric: successes/time
+--------------------------
+
+CPO2(wo/AdR): [ 2.2647662  4.589379   5.565255  11.058621   9.994083 ]
+seeds: [0, 1, 2, 3, 4]
+mean: 6.694
+std: 3.717
+--
+SAPG: [0.06228517 0.57628006 2.7885885  0.59942573 0.4281653 ]
+seeds: [0, 1, 2, 3, 4]
+mean: 0.891
+std: 1.082
+--
+PPO: [0.13739906 0.59911567 0.07170907 0.53227973 0.5102314 ]
+seeds: [0, 1, 2, 3, 4]
+mean: 0.370
+std: 0.246
+--
+==========================
+✅ Top method by mean: CPO2(wo/AdR)
+Mean: 6.694, 95% CI: [2.079, 11.310]
+
+------ p-values vs top method (Welch's t-test) ------
+SAPG           : p = 0.0225
+PPO            : p = 0.0189
+
+------ Summary ------
+✅ Only 'CPO2(wo/AdR)' is significantly better than all others (p < 0.05)
+⚠️  Methods significantly worse than 'CPO2(wo/AdR)' (p < 0.05): SAPG, PPO
+
+--------------------------------------------------
+Top: CPO2(wo/AdR)
+No Significant Difference: (none)
+Significantly Worse: SAPG, PPO
+--------------------------------------------------
+Evaluating for target step: 10000000000.0
+==========================
+Task: sapg_allegro_kuka_two_arms_reorientation
+Target Env Step: 10000000000.0
+Metric: successes/time
+--------------------------
+
+CPO2(wo/AdR): [28.977774 24.27816  14.706208 27.16749  23.329163]
+seeds: [0, 1, 2, 3, 4]
+mean: 23.692
+std: 5.505
+--
+SAPG: [2.902278   0.85894614 2.9081738  2.322103   0.86313915]
+seeds: [0, 1, 2, 3, 4]
+mean: 1.971
+std: 1.041
+--
+PPO: [0.30434623 0.85110956 0.45694417 0.7749338  0.63564473]
+seeds: [0, 1, 2, 3, 4]
+mean: 0.605
+std: 0.225
+--
+==========================
+✅ Top method by mean: CPO2(wo/AdR)
+Mean: 23.692, 95% CI: [16.856, 30.528]
+
+------ p-values vs top method (Welch's t-test) ------
+SAPG           : p = 0.0007
+PPO            : p = 0.0007
+
+------ Summary ------
+✅ Only 'CPO2(wo/AdR)' is significantly better than all others (p < 0.05)
+⚠️  Methods significantly worse than 'CPO2(wo/AdR)' (p < 0.05): SAPG, PPO
+
+--------------------------------------------------
+Top: CPO2(wo/AdR)
+No Significant Difference: (none)
+Significantly Worse: SAPG, PPO
+--------------------------------------------------
+Evaluating for target step: 15000000000.0
+==========================
+Task: sapg_allegro_kuka_two_arms_reorientation
+Target Env Step: 15000000000.0
+Metric: successes/time
+--------------------------
+
+CPO2(wo/AdR): [33.537346 30.860949 28.459606 35.79691  34.062428]
+seeds: [0, 1, 2, 3, 4]
+mean: 32.543
+std: 2.889
+--
+SAPG: [2.7893634 2.8871148 2.9641376 2.9719834 2.6146295]
+seeds: [0, 1, 2, 3, 4]
+mean: 2.845
+std: 0.149
+--
+PPO: [0.65414345 1.0221848  0.9889876  1.191173   0.6516433 ]
+seeds: [0, 1, 2, 3, 4]
+mean: 0.902
+std: 0.240
+--
+==========================
+✅ Top method by mean: CPO2(wo/AdR)
+Mean: 32.543, 95% CI: [28.956, 36.131]
+
+------ p-values vs top method (Welch's t-test) ------
+SAPG           : p = 0.0000
+PPO            : p = 0.0000
+
+------ Summary ------
+✅ Only 'CPO2(wo/AdR)' is significantly better than all others (p < 0.05)
+⚠️  Methods significantly worse than 'CPO2(wo/AdR)' (p < 0.05): SAPG, PPO
+
+--------------------------------------------------
+Top: CPO2(wo/AdR)
+No Significant Difference: (none)
+Significantly Worse: SAPG, PPO
+--------------------------------------------------
+Evaluating for target step: 20000000000.0
+==========================
+Task: sapg_allegro_kuka_two_arms_reorientation
+Target Env Step: 20000000000.0
+Metric: successes/time
+--------------------------
+
+CPO2(wo/AdR): [36.925404 32.61789  31.832798 38.410522 36.09097 ]
+seeds: [0, 1, 2, 3, 4]
+mean: 35.176
+std: 2.832
+--
+SAPG: [ 2.7724917  2.8871543 10.579852   6.1886077  3.0007694]
+seeds: [0, 1, 2, 3, 4]
+mean: 5.086
+std: 3.389
+--
+PPO: [0.6911313 1.2560513 0.9399217 2.705802  1.3905929]
+seeds: [0, 1, 2, 3, 4]
+mean: 1.397
+std: 0.781
+--
+==========================
+✅ Top method by mean: CPO2(wo/AdR)
+Mean: 35.176, 95% CI: [31.659, 38.692]
+
+------ p-values vs top method (Welch's t-test) ------
+SAPG           : p = 0.0000
+PPO            : p = 0.0000
+
+------ Summary ------
+✅ Only 'CPO2(wo/AdR)' is significantly better than all others (p < 0.05)
+⚠️  Methods significantly worse than 'CPO2(wo/AdR)' (p < 0.05): SAPG, PPO
+
+--------------------------------------------------
+Top: CPO2(wo/AdR)
+No Significant Difference: (none)
+Significantly Worse: SAPG, PPO
+--------------------------------------------------

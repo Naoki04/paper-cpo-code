@@ -1,0 +1,45 @@
+Evaluating for target step: 5000000000.0
+==========================
+Task: Humanoid
+Target Env Step: 5000000000.0
+Metric: rewards/step
+--------------------------
+
+SAPG: [9692.499 9093.686 6847.532 9523.802 8264.105]
+seeds: [0, 1, 2, 3, 4]
+mean: 8684
+std: 1166
+--
+PPO: [9538.66   7670.7603 7586.41   9432.4375 7930.8467]
+seeds: [0, 1, 2, 3, 4]
+mean: 8432
+std: 971
+--
+PBT: [10290.318  8651.436  9893.181  9604.337  9742.278]
+seeds: [0, 1, 2, 3, 4]
+mean: 9636
+std: 607
+--
+CPO: [7939.416 9472.62  9189.378 9089.583 9955.696]
+seeds: [0, 1, 2, 3, 4]
+mean: 9129
+std: 745
+--
+==========================
+✅ Top method by mean: PBT
+Mean: 9636.311, 95% CI: [8882.073, 10390.548]
+
+------ p-values vs top method (Welch's t-test) ------
+SAPG           : p = 0.1564
+PPO            : p = 0.0525
+CPO            : p = 0.2736
+
+------ Summary ------
+✅ Statistically tied top methods (p ≥ 0.05 vs top): PBT, SAPG, PPO, CPO
+✅ No methods are significantly worse than 'PBT'
+
+--------------------------------------------------
+Top: PBT
+No Significant Difference: SAPG, PPO, CPO
+Significantly Worse: (none)
+--------------------------------------------------

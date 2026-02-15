@@ -1,0 +1,44 @@
+==========================
+Task: sapg_allegro_kuka_throw
+Target Env Step: 20000000000
+Metric: successes/time
+--------------------------
+
+CPO(wo/AdR): [24.792614 20.207626 19.653238 21.196043 23.137598]
+seeds: [0, 1, 2, 3, 4]
+mean: 21.797
+std: 2.136
+--
+SAPG: [22.416508 22.714716 23.748444 20.753994 23.483847]
+seeds: [0, 1, 2, 3, 4]
+mean: 22.624
+std: 1.178
+--
+PPO: [10.281797 18.421953 16.169783 14.946342 18.311764]
+seeds: [0, 1, 2, 3, 4]
+mean: 15.626
+std: 3.330
+--
+PBT: [19.871029 18.822277 20.283186 18.900255 17.912422]
+seeds: [0, 1, 2, 3, 4]
+mean: 19.158
+std: 0.936
+--
+==========================
+✅ Top method by mean: SAPG
+Mean: 22.624, 95% CI: [21.161, 24.086]
+
+------ p-values vs top method (Welch's t-test) ------
+CPO(wo/AdR)    : p = 0.4766
+PPO            : p = 0.0069
+PBT            : p = 0.0010
+
+------ Summary ------
+✅ Statistically tied top methods (p ≥ 0.05 vs top): SAPG, CPO(wo/AdR)
+⚠️  Methods significantly worse than 'SAPG' (p < 0.05): PPO, PBT
+
+--------------------------------------------------
+Top: SAPG
+No Significant Difference: CPO(wo/AdR)
+Significantly Worse: PPO, PBT
+--------------------------------------------------

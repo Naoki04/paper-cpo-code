@@ -1,0 +1,155 @@
+==========================
+Task: sapg_humanoid
+Target Env Step: 2500000000.0
+Metric: rewards/step
+--------------------------
+
+CPO2(wo/AdR): [7832.082 8564.927 8924.43  8896.596 9469.315]
+seeds: [0, 1, 2, 3, 4]
+mean: 8737.471
+std: 601.118
+--
+SAPG: [8496.289  8407.396  6383.1973 8538.104  7743.7935]
+seeds: [0, 1, 2, 3, 4]
+mean: 7913.756
+std: 914.376
+--
+PPO: [9257.684  7322.042  7535.383  9506.192  7738.9033]
+seeds: [0, 1, 2, 3, 4]
+mean: 8272.041
+std: 1027.621
+--
+==========================
+✅ Top method by mean: CPO2(wo/AdR)
+Mean: 8737.471, 95% CI: [7991.084, 9483.857]
+
+------ p-values vs top method (Welch's t-test) ------
+SAPG           : p = 0.1367
+PPO            : p = 0.4134
+
+------ Summary ------
+✅ Statistically tied top methods (p ≥ 0.05 vs top): CPO2(wo/AdR), SAPG, PPO
+✅ No methods are significantly worse than 'CPO2(wo/AdR)'
+
+--------------------------------------------------
+Top: CPO2(wo/AdR)
+No Significant Difference: SAPG, PPO
+Significantly Worse: (none)
+--------------------------------------------------
+Evaluating for target step: 5000000000.0
+==========================
+Task: sapg_humanoid
+Target Env Step: 5000000000.0
+Metric: rewards/step
+--------------------------
+
+CPO2(wo/AdR): [7955.0215 9451.573  9207.732  9082.925  9928.468 ]
+seeds: [0, 1, 2, 3, 4]
+mean: 9125.145
+std: 729.670
+--
+SAPG: [9698.704  9105.051  6849.3164 9521.158  8269.767 ]
+seeds: [0, 1, 2, 3, 4]
+mean: 8688.799
+std: 1166.756
+--
+PPO: [9522.398  7646.0205 7558.289  9381.479  7952.8916]
+seeds: [0, 1, 2, 3, 4]
+mean: 8412.216
+std: 961.665
+--
+==========================
+✅ Top method by mean: CPO2(wo/AdR)
+Mean: 9125.145, 95% CI: [8219.139, 10031.150]
+
+------ p-values vs top method (Welch's t-test) ------
+SAPG           : p = 0.5022
+PPO            : p = 0.2257
+
+------ Summary ------
+✅ Statistically tied top methods (p ≥ 0.05 vs top): CPO2(wo/AdR), SAPG, PPO
+✅ No methods are significantly worse than 'CPO2(wo/AdR)'
+
+--------------------------------------------------
+Top: CPO2(wo/AdR)
+No Significant Difference: SAPG, PPO
+Significantly Worse: (none)
+--------------------------------------------------
+Evaluating for target step: 7500000000.0
+==========================
+Task: sapg_humanoid
+Target Env Step: 7500000000.0
+Metric: rewards/step
+--------------------------
+
+CPO2(wo/AdR): [ 8216.748  9268.321  8690.716  9258.507 10038.347]
+seeds: [0, 1, 2, 3, 4]
+mean: 9094.527
+std: 685.830
+--
+SAPG: [ 9824.034   9578.208   7370.3013 10111.864   9006.086 ]
+seeds: [0, 1, 2, 3, 4]
+mean: 9178.099
+std: 1089.376
+--
+PPO: [9631.3955 7698.4985 7194.3413 8924.934  7766.4697]
+seeds: [0, 1, 2, 3, 4]
+mean: 8243.128
+std: 1001.988
+--
+==========================
+✅ Top method by mean: SAPG
+Mean: 9178.099, 95% CI: [7825.460, 10530.737]
+
+------ p-values vs top method (Welch's t-test) ------
+CPO2(wo/AdR)   : p = 0.8888
+PPO            : p = 0.1958
+
+------ Summary ------
+✅ Statistically tied top methods (p ≥ 0.05 vs top): SAPG, CPO2(wo/AdR), PPO
+✅ No methods are significantly worse than 'SAPG'
+
+--------------------------------------------------
+Top: SAPG
+No Significant Difference: CPO2(wo/AdR), PPO
+Significantly Worse: (none)
+--------------------------------------------------
+Evaluating for target step: 10000000000.0
+==========================
+Task: sapg_humanoid
+Target Env Step: 10000000000.0
+Metric: rewards/step
+--------------------------
+
+CPO2(wo/AdR): [ 8697.808  9606.812  9557.467  9409.577 10448.966]
+seeds: [0, 1, 2, 3, 4]
+mean: 9544.127
+std: 623.939
+--
+SAPG: [10224.895  9870.615  7808.782  9861.407  9496.197]
+seeds: [0, 1, 2, 3, 4]
+mean: 9452.379
+std: 954.245
+--
+PPO: [9501.236  7511.6494 7406.3896 9469.008  8140.75  ]
+seeds: [0, 1, 2, 3, 4]
+mean: 8405.807
+std: 1024.569
+--
+==========================
+✅ Top method by mean: CPO2(wo/AdR)
+Mean: 9544.127, 95% CI: [8769.404, 10318.850]
+
+------ p-values vs top method (Welch's t-test) ------
+SAPG           : p = 0.8624
+PPO            : p = 0.0739
+
+------ Summary ------
+✅ Statistically tied top methods (p ≥ 0.05 vs top): CPO2(wo/AdR), SAPG, PPO
+✅ No methods are significantly worse than 'CPO2(wo/AdR)'
+
+--------------------------------------------------
+Top: CPO2(wo/AdR)
+No Significant Difference: SAPG, PPO
+Significantly Worse: (none)
+--------------------------------------------------
