@@ -1,9 +1,15 @@
 
-# Coupled Policy Optimization: Improving Exploration Efficiency of Ensemble Agents via Divergence Constraint
+# CPO: Rethinking Policy Diversity in Ensemble Policy Gradient in Large-Scale Reinforcement Learning
 
- 
-Anonymous Authors \
-Under Review
+Authors: Naoki Shitanda, Motoki Omura, Tatsuya Harada, Takayuki Osa \
+Accepted at **ICLR 2026 (Poster)**
+
+This repository contains the official implementation for the algorithm CPO, prposed in [***Rethinking Policy Diversity in Ensemble Policy Gradient in Large-Scale Reinforcement Learning***](https://openreview.net/forum?id=gRdEcs0qdd).
+
+## Performance
+<img src="docs/images/performance.png" alt="performance" title="figure">
+
+
 
 ## Key Implementation Points
 
