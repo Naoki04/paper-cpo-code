@@ -10,7 +10,6 @@ params:
   network:
     name: actor_critic
     separate: False
-    double_critic: False 
 
     space:
       continuous:
@@ -82,7 +81,6 @@ params:
     awac_gamma: 1 
     enable_w: False 
     save_batch: False 
-    double_critic: ${..network.double_critic}
     scheduler_kl_data: no_awac 
     reduce_awac: False 
 

@@ -194,9 +194,6 @@ class A2CBuilder(NetworkBuilder):
             self.value_size = kwargs.pop('value_size', 1)
             self.num_seqs = num_seqs = kwargs.pop('num_seqs', 1)
             self.net_type = kwargs.pop('type', 'simple')
-            self.is_double_critic = kwargs.get('double_critic', False)
-            self.is_double_critic = params.get('double_critic', False)
-
             NetworkBuilder.BaseNetwork.__init__(self)
             self.load(params)
             self.actor_cnn = nn.Sequential()
@@ -269,14 +266,8 @@ class A2CBuilder(NetworkBuilder):
             if self.separate:
                 self.critic_mlp = self._build_mlp(**mlp_args)
             
-            if self.is_double_critic:
-                self.value1 = self._build_value_layer(out_size, self.value_size)
-                self.value2 = self._build_value_layer(out_size, self.value_size)
-                self.value1_act = self.activations_factory.create(self.value_activation)
-                self.value2_act = self.activations_factory.create(self.value_activation)
-            else:
-                self.value = self._build_value_layer(out_size, self.value_size)
-                self.value_act = self.activations_factory.create(self.value_activation)
+            self.value = self._build_value_layer(out_size, self.value_size)
+            self.value_act = self.activations_factory.create(self.value_activation)
 
             if self.is_discrete:
                 self.logits = torch.nn.Linear(out_size, actions_num)
@@ -458,12 +449,7 @@ class A2CBuilder(NetworkBuilder):
                 else:
                     out = self.actor_mlp(out)
                 
-                if self.is_double_critic:
-                    value1 = self.value1_act(self.value1(out))
-                    value2 = self.value2_act(self.value2(out))
-                    value = torch.min(value1, value2)
-                else:
-                    value = self.value_act(self.value(out))           
+                value = self.value_act(self.value(out))
 
                 if self.central_value:
                     return value, states
@@ -484,10 +470,7 @@ class A2CBuilder(NetworkBuilder):
                     else:
                         sigma = self.sigma_act(self.sigma(out))
     
-                    if self.is_double_critic:
-                        return mu, sigma, value, states, value1, value2
-                    else:
-                        return mu, mu*0 + sigma, value, states
+                    return mu, mu*0 + sigma, value, states
                     
         def is_separate_critic(self):
             return self.separate
@@ -1019,4 +1002,3 @@ class SACBuilder(NetworkBuilder):
             else:
                 self.is_discrete = False
                 self.is_continuous = False
-

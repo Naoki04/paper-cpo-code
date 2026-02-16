@@ -164,10 +164,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         leader_online_mask = input_dict.get('leader_online_mask', None)
         follower_online_mask = input_dict.get('follower_online_mask', None)
         
-        if self.is_double_critic:
-            value_preds_batch1 = input_dict["old_values1"]
-            value_preds_batch2 = input_dict["old_values2"]
-        
         critic_mask = torch.logical_or(torch.logical_or(leader_online_mask, follower_online_mask), off_policy_mask)
             
         lr_mul = 1.0
@@ -196,12 +192,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             mu = res_dict['mus'] 
             sigma = res_dict['sigmas']
             
-            if "values1" in res_dict.keys(): 
-                values1 = res_dict['values1']
-                values2 = res_dict['values2']
-            
-            
-            
             with torch.no_grad():
                 leader_batch_dict = copy.deepcopy(batch_dict)
                 leader_batch_dict['obs'][:,-self.intr_reward_coef_embd.shape[-1]:] = 0
@@ -221,8 +211,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 if self.sapg2:
                     if self.vanilla_sapg:
                         c_loss, mean_v, mean_q, mean_v_pred = common_losses.critic_loss_sapg(self.model, value_preds_batch, values, curr_e_clip, return_batch, self.clip_value, critic_mask, off_policy_mask, self.enable_w)
-                    elif self.is_double_critic:
-                        c_loss, mean_v, mean_q, mean_v_pred = common_losses.critic_loss_sapg2_double_critic(self.model, value_preds_batch, value_preds_batch1, value_preds_batch2, values, values1, values2, curr_e_clip, return_batch, self.clip_value, critic_mask, off_policy_mask, self.enable_w)
                     else:
                         c_loss, mean_v, mean_q, mean_v_pred = common_losses.critic_loss_sapg2(self.model, value_preds_batch, values, curr_e_clip, return_batch, self.clip_value, critic_mask, off_policy_mask, self.enable_w)
                 else:

@@ -8,35 +8,6 @@ def critic_loss(model, value_preds_batch, values, curr_e_clip, return_batch, cli
     #return model.get_value_layer().loss(value_preds_batch=value_preds_batch, values=values, curr_e_clip=curr_e_clip, return_batch=return_batch, clip_value=clip_value)
 
 
-def critic_loss_sapg2_double_critic(model, value_preds_batch, value_preds_batch1, value_preds_batch2, values, values1, values2, curr_e_clip, return_batch, clip_value, critic_mask, off_policy_mask, enable_w):
-    
-    c_loss1 = default_critic_loss(value_preds_batch1, values1, curr_e_clip, return_batch, clip_value)
-    c_loss2 = default_critic_loss(value_preds_batch2, values2, curr_e_clip, return_batch, clip_value)
-    c_loss = c_loss1 + c_loss2
-    
-    
-    mask = critic_mask.unsqueeze(1)
-    assert mask.shape == c_loss.shape, "mask shape is {}, c_loss shape is {}".format(mask.shape, c_loss.shape)
-    
-    c_loss_masked = c_loss * mask
-    
-    
-    if enable_w:
-        w = mask.count_nonzero().item()/c_loss.shape[0] 
-        c_loss_masked = c_loss_masked / w 
-    
-    
-    masked_values = values * mask
-    masked_value_preds = value_preds_batch * mask
-    masked_returns = return_batch * mask
-    num_valid = mask.sum()
-    mean_v = masked_values.sum() / (num_valid + 1e-8)
-    mean_v_pred = masked_value_preds.sum() / (num_valid + 1e-8)
-    mean_q = masked_returns.sum() / (num_valid + 1e-8)
-    
-    return c_loss_masked, mean_v.detach().cpu().numpy(), mean_q.detach().cpu().numpy(), mean_v_pred.detach().cpu().numpy()
-    
-
 def critic_loss_sapg2(model, value_preds_batch, values, curr_e_clip, return_batch, clip_value, critic_mask, off_policy_mask, enable_w):
     c_loss = default_critic_loss(value_preds_batch, values, curr_e_clip, return_batch, clip_value)
     

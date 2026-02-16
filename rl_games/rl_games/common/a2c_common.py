@@ -291,7 +291,6 @@ class A2CBase(BaseAlgorithm):
         self.vanilla_sapg = self.config.get('vanilla_sapg', False)
         self.enable_w = self.config.get('enable_w', False)
         self.save_batch = self.config.get('save_batch', False)
-        self.is_double_critic = self.config.get('double_critic', False)
         self.scheduler_kl_data = self.config.get('scheduler_kl_data', False)
         self.reduce_awac = self.config.get('reduce_awac', False)
         if self.use_smooth_clamp:
@@ -517,40 +516,6 @@ class A2CBase(BaseAlgorithm):
                 value = result['values']
             return value
         
-    def get_values1(self, obs, rnn_states):
-        with torch.no_grad():
-            if self.has_central_value:
-                exit("not implemented")
-            else:
-                self.model.eval()
-                processed_obs = self._preproc_obs(obs['obs'])
-                input_dict = {
-                    'is_train': False,
-                    'prev_actions': None, 
-                    'obs' : processed_obs,
-                    'rnn_states' : rnn_states
-                }
-                result = self.model(input_dict)
-                value1 = result['values1']
-            return value1
-        
-    def get_values2(self, obs, rnn_states):
-        with torch.no_grad():
-            if self.has_central_value:
-                exit("Not implemented")
-            else:
-                self.model.eval()
-                processed_obs = self._preproc_obs(obs['obs'])
-                input_dict = {
-                    'is_train': False,
-                    'prev_actions': None, 
-                    'obs' : processed_obs,
-                    'rnn_states' : rnn_states
-                }
-                result = self.model(input_dict)
-                value2 = result['values2']
-            return value2
-
     @property
     def device(self):
         return self.ppo_device
@@ -1289,7 +1254,7 @@ class A2CBase(BaseAlgorithm):
                 new_batch_dict['leader_online_mask'] = leader_online_mask 
                 new_batch_dict['follower_online_mask'] = follower_online_mask 
                 
-            elif key in ['values', 'returns','values1', 'values2']:
+            elif key in ['values', 'returns']:
                 pass  # handled below
             elif key == 'rnn_states':
                 if val is not None:
@@ -1318,10 +1283,7 @@ class A2CBase(BaseAlgorithm):
                     new_batch_dict[key] = filter_leader(new_batch_dict[key], len(val), repeat_idxs, num_blocks, required_mask)
 
         
-        new_values_list = [batch_dict['values']] 
-        if self.is_double_critic:
-            new_values1_list = [batch_dict['values1']]
-            new_values2_list = [batch_dict['values2']]
+        new_values_list = [batch_dict['values']]
             
         if self.use_ad_reward: 
             new_returns_list = [batch_dict['returns_with_ad_rew']]
@@ -1406,44 +1368,12 @@ class A2CBase(BaseAlgorithm):
             new_returns_list.append(swap_and_flatten01(mb_returns))
             new_values_list.append(swap_and_flatten01(mb_values[:-1]))
             
-            if self.is_double_critic: 
-                mb_values1 = []
-                for i in range((flattened_mb_obs.shape[0] + 8191) // 8192):
-                    mb_values1.append(self.get_values1({
-                        'obs': flattened_mb_obs[i*8192:(i+1)*8192], 
-                        'states': flattened_mb_states[i*8192:(i+1)*8192] if mb_states is not None else None
-                        }, rnn_states=[s[:, i*8192:(i+1)*8192] for s in flattened_rnn_states] if flattened_rnn_states is not None else None))
-                mb_values1 = torch.cat(mb_values1, dim=0)
-                last_values1 = self.get_values1(last_obs_and_states, last_rnn_states)
-                mb_values1 = mb_values1.reshape(*mb_obs.shape[:2], *mb_values1.shape[1:])
-                mb_values1 = torch.cat([mb_values1, last_values1.unsqueeze(0)], dim=0)
-                new_values1_list.append(swap_and_flatten01(mb_values1[:-1]))
-                
-                mb_values2 = []
-                for i in range((flattened_mb_obs.shape[0] + 8191) // 8192):
-                    mb_values2.append(self.get_values2({
-                        'obs': flattened_mb_obs[i*8192:(i+1)*8192], 
-                        'states': flattened_mb_states[i*8192:(i+1)*8192] if mb_states is not None else None
-                        }, rnn_states=[s[:, i*8192:(i+1)*8192] for s in flattened_rnn_states] if flattened_rnn_states is not None else None))
-                mb_values2 = torch.cat(mb_values2, dim=0)
-                last_values2 = self.get_values2(last_obs_and_states, last_rnn_states)
-                mb_values2 = mb_values2.reshape(*mb_obs.shape[:2], *mb_values2.shape[1:])
-                mb_values2 = torch.cat([mb_values2, last_values2.unsqueeze(0)], dim=0)
-                new_values2_list.append(swap_and_flatten01(mb_values2[:-1]))
-                
-                
         new_batch_dict['returns'] = torch.cat(new_returns_list, dim=0)
         new_batch_dict['values'] = torch.cat(new_values_list, dim=0)
-        if self.is_double_critic:
-            new_batch_dict['values1'] = torch.cat(new_values1_list, dim=0)
-            new_batch_dict['values2'] = torch.cat(new_values2_list, dim=0)
             
         if self.use_others_experience == 'lf':
             new_batch_dict['returns'] = filter_leader(new_batch_dict['returns'], len(batch_dict['returns']), repeat_idxs, num_blocks, required_mask)
             new_batch_dict['values'] = filter_leader(new_batch_dict['values'], len(batch_dict['values']), repeat_idxs, num_blocks, required_mask)
-            if self.is_double_critic:
-                new_batch_dict['values1'] = filter_leader(new_batch_dict['values1'], len(batch_dict['values1']), repeat_idxs, num_blocks, required_mask)
-                new_batch_dict['values2'] = filter_leader(new_batch_dict['values2'], len(batch_dict['values2']), repeat_idxs, num_blocks, required_mask)
         
         
         if self.reduce_awac: 
@@ -1760,8 +1690,6 @@ class ContinuousA2CBase(A2CBase):
     def init_tensors(self):
         A2CBase.init_tensors(self)
         self.update_list = ['actions', 'neglogpacs', 'values', 'mus', 'sigmas']
-        if self.is_double_critic:
-            self.update_list += ['values1','values2']
             
         self.tensor_list = self.update_list + ['obses', 'states', 'dones']
         
@@ -1897,10 +1825,6 @@ class ContinuousA2CBase(A2CBase):
         rnn_states = batch_dict.get('rnn_states', None)
         rnn_masks = batch_dict.get('rnn_masks', None)
         
-        if self.is_double_critic:
-            values1 = batch_dict['values1']
-            values2 = batch_dict['values2']
-
         advantages = returns - values
         
         if self.normalize_value:
@@ -1908,12 +1832,6 @@ class ContinuousA2CBase(A2CBase):
                 self.value_mean_std.train()
                 
             values = self.value_mean_std(values)
-            
-            if self.is_double_critic: 
-                self.value_mean_std.eval()
-                values1 = self.value_mean_std(values1)
-                values2 = self.value_mean_std(values2)
-                self.value_mean_std.train()    
             
             returns = self.value_mean_std(returns)
             self.value_mean_std.eval()
@@ -1955,11 +1873,6 @@ class ContinuousA2CBase(A2CBase):
         dataset_dict['leader_online_mask'] = batch_dict.get('leader_online_mask', None)
         dataset_dict['follower_online_mask'] = batch_dict.get('follower_online_mask', None)
         
-        if self.is_double_critic:
-            dataset_dict["old_values1"] = values1
-            dataset_dict["old_values2"] = values2
-        
-
         self.dataset.update_values_dict(dataset_dict)
 
         if self.has_central_value:
@@ -1971,9 +1884,6 @@ class ContinuousA2CBase(A2CBase):
             dataset_dict['obs'] = batch_dict['states']
             dataset_dict['dones'] = dones
             dataset_dict['rnn_masks'] = rnn_masks
-            if self.is_double_critic:
-                dataset_dict['old_values1'] = values1
-                dataset_dict['old_values2'] = values2
             self.central_value_net.update_dataset(dataset_dict)
             
             
