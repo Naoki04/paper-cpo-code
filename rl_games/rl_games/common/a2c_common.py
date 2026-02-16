@@ -1842,7 +1842,6 @@ class ContinuousA2CBase(A2CBase):
             kl_num_data_list = []
         
         if self.plot_ratio:
-            # 各エージェントのratio_tensorを格納するリスト  
             ratio_tensor_list = []
             
             
@@ -1857,7 +1856,6 @@ class ContinuousA2CBase(A2CBase):
                     
                 if self.plot_ratio and mini_ep == 0:
                     ratio_list = self.calc_importance_ratio(self.dataset[i])
-                    # ratio_tensor_listが空ならコピーし、空じゃなければ長さが同じことを確認し、各要素のtensorを結合する
                     if len(ratio_tensor_list) == 0:
                         ratio_tensor_list = [r.clone() for r in ratio_list]
                     else:
@@ -1929,7 +1927,6 @@ class ContinuousA2CBase(A2CBase):
             )
         
         if self.plot_ratio:
-            # --- deviation を計算 ---
             ratio_deviation_mean = [(ratio_tensor - 1.0).abs().mean(dim=0).item()
                                     for ratio_tensor in ratio_tensor_list]
             ratio_deviation_std = [(ratio_tensor - 1.0).abs().std(dim=0, unbiased=True).item()
@@ -1938,7 +1935,6 @@ class ContinuousA2CBase(A2CBase):
             print("IS ratio deviation mean", ratio_deviation_mean)
             print("IS ratio deviation std", ratio_deviation_std)
 
-            # --- mean 用ファイル ---
             row_mean = pd.DataFrame([ratio_deviation_mean])
             row_mean.to_csv(
                 self.ratio_deviation_mean_path,
@@ -1947,7 +1943,6 @@ class ContinuousA2CBase(A2CBase):
                 header=(not os.path.exists(self.ratio_deviation_mean_path))
             )
 
-            # --- std 用ファイル ---
             row_std = pd.DataFrame([ratio_deviation_std])
             row_std.to_csv(
                 self.ratio_deviation_std_path,

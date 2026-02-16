@@ -47,7 +47,6 @@ params:
     normalize_value: True
     value_bootstrap: True
 
-    # SAPG2を有効にする
     sapg2: True
     vanilla_sapg: False 
     lambda_awac : 0.2
