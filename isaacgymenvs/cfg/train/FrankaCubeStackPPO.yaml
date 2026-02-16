@@ -71,8 +71,6 @@ params:
     double_critic: ${..network.double_critic}
     scheduler_kl_data: no_awac 
     reduce_awac: False 
-    plot_kl: False # Plot KL divergence between up-to-date agents
-    plot_ratio: False # Plot importance ratios between bahavior followers and the up-to-date leader
 
     use_ad_reward: True
     ad_reward_type: "sa" # 'sa', 's', 'a'
