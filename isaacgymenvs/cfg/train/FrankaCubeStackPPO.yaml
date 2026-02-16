@@ -69,7 +69,7 @@ params:
     scheduler_kl_data: no_awac 
     reduce_awac: False 
 
-    use_ad_reward: True
+    use_ad_reward: False
     ad_reward_type: "sa" # 'sa', 's', 'a'
     ad_reward_discriminate_leader: True
     discriminator_config: 
