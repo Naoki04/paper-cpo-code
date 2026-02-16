@@ -77,7 +77,6 @@ params:
     awac_gamma: 1 
     enable_w: False 
     save_batch: False 
-    off_policy_ceb: True 
     double_critic: ${..network.double_critic}
     scheduler_kl_data: no_awac 
     reduce_awac: False 

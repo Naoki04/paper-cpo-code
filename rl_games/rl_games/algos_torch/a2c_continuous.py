@@ -78,7 +78,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         self.use_ad_reward = self.config.get('use_ad_reward', False)
         self.ad_reward_type = self.config.get('ad_reward_type', None)
         self.ad_reward_discriminate_leader = self.config.get('ad_reward_discriminate_leader', True)
-        self.off_policy_ceb = self.config.get('off_policy_ceb', False)
         
         if self.use_ad_reward:
             
@@ -169,10 +168,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             value_preds_batch1 = input_dict["old_values1"]
             value_preds_batch2 = input_dict["old_values2"]
         
-        if self.off_policy_ceb:
-            critic_mask = torch.logical_or(torch.logical_or(leader_online_mask, follower_online_mask), off_policy_mask)
-        else:
-            critic_mask = torch.logical_or(leader_online_mask, follower_online_mask) 
+        critic_mask = torch.logical_or(torch.logical_or(leader_online_mask, follower_online_mask), off_policy_mask)
             
         lr_mul = 1.0
         curr_e_clip = self.e_clip
