@@ -77,13 +77,13 @@ We provide the exact commands which can be used to reproduce the performance of 
 ./scripts/train.sh allegro_hand "test" 1 24576 [] --cpo --num-expl-coef-blocks=6 --wandb-entity <ENTITY_NAME> --ir-type=none --extra-args "train.params.config.awac_beta=0.0005 train.params.config.lambda_awac=0.1 train.params.config.ad_reward_coef=0.001"
 
 # Allegro Kuka Regrasping
-./scripts/train_allegro_kuka.sh regrasping "test" 1 24576 [] --cpo --lstm --num-expl-coef-blocks=6 --wandb-entity <ENTITY_NAME> --ir-type=none --extra-args "train.params.config.awac_beta=0.0001"
+./scripts/train_allegro_kuka.sh regrasping "test" 1 24576 [] --cpo --lstm --num-expl-coef-blocks=6 --wandb-entity <ENTITY_NAME> --ir-type=none --extra-args "train.params.config.awac_beta=0.001"
 
 # Allegro Kuka Reorientation
 ./scripts/train_allegro_kuka.sh reorientation "test" 1 24576 [] --cpo --lstm --num-expl-coef-blocks=6 --wandb-entity <ENTITY_NAME> --ir-type=entropy --ir-coef-scale=0.005 --extra-args "train.params.config.awac_beta=0.001"
 
 # Allegro Kuka Throw
-./scripts/train_allegro_kuka.sh throw "test" 1 24576 [] --cpo --lstm --num-expl-coef-blocks=6 --wandb-entity <ENTITY_NAME> --ir-type=none --extra-args "train.params.config.awac_beta=0.0001 train.params.config.lambda_awac=0.1"
+./scripts/train_allegro_kuka.sh throw "test" 1 24576 [] --cpo --lstm --num-expl-coef-blocks=6 --wandb-entity <ENTITY_NAME> --ir-type=none --extra-args "train.params.config.awac_beta=0.001 train.params.config.lambda_awac=0.1"
 ```
 
 
