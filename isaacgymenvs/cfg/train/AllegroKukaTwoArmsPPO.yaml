@@ -1,0 +1,8 @@
+defaults:
+  - AllegroKukaPPO
+  - _self_
+
+params:
+  config:
+    max_epochs: 52000 # 24576envs * 16steps * epochs ~ 50G env_steps
+    save_frequency: 5200
