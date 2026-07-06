@@ -71,7 +71,7 @@ We provide the exact commands which can be used to reproduce the performance of 
 
 ```bash
 # Shadow Hand
-./scripts/train.sh shadow_hand "test" 1 24576 [] --cpo --num-expl-coef-blocks=6 --wandb-entity <ENTITY_NAME> --ir-type=entropy --ir-coef-scale=0.005 --extra-args "train.params.config.awac_beta=0.01 train.params.config.ad_reward_coef=0.01"
+./scripts/train.sh shadow_hand "test" 1 24576 [] --cpo --num-expl-coef-blocks=6 --wandb-entity <ENTITY_NAME> --ir-type=entropy --ir-coef-scale=0.005 --extra-args "train.params.config.awac_beta=0.001 train.params.config.ad_reward_coef=0.01"
 
 # Allegro Hand
 ./scripts/train.sh allegro_hand "test" 1 24576 [] --cpo --num-expl-coef-blocks=6 --wandb-entity <ENTITY_NAME> --ir-type=none --extra-args "train.params.config.awac_beta=0.0005 train.params.config.lambda_awac=0.1 train.params.config.ad_reward_coef=0.001"
